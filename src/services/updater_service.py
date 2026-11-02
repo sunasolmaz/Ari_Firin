@@ -104,6 +104,13 @@ class UpdaterService:
                     logger.info(f"🔍 Sunucu sürüm kontrolü: Sunucu=v{latest_ver}, Mevcut=v{self.current_version}")
 
                     if parse_version(latest_ver) > parse_version(self.current_version):
+                        import re
+                        if download_url and re.search(r'v\d+\.\d+\.\d+', download_url):
+                            download_url = re.sub(r'v\d+\.\d+\.\d+', f'v{latest_ver}', download_url)
+                        elif not download_url and version_url:
+                            base_url = version_url.rsplit('/', 1)[0]
+                            download_url = f"{base_url}/AriFirin_v{latest_ver}.zip"
+
                         self.latest_update_info = {
                             "version": latest_ver,
                             "download_url": download_url,
@@ -300,6 +307,37 @@ class UpdaterService:
 
                 new_exe_dir = os.path.dirname(installer_path)
                 current_exe_dir = os.path.dirname(current_exe)
+
+                # Hedef dizindeki config.json ve .env surum bilgisini yeni surumle guncelle
+                new_ver = self.latest_update_info.get("version", "") if self.latest_update_info else ""
+                if new_ver:
+                    target_cfg = os.path.join(current_exe_dir, "config.json")
+                    if os.path.exists(target_cfg):
+                        try:
+                            with open(target_cfg, "r", encoding="utf-8") as f:
+                                cdata = json.load(f)
+                            cdata.setdefault("application", {})["version"] = new_ver
+                            if "update" in cdata and "download_url" in cdata["update"]:
+                                cdata["update"]["download_url"] = re.sub(r'v\d+\.\d+\.\d+', f'v{new_ver}', cdata["update"]["download_url"])
+                            with open(target_cfg, "w", encoding="utf-8") as f:
+                                json.dump(cdata, f, indent=4, ensure_ascii=False)
+                        except Exception as ce:
+                            logger.warning(f"config.json guncellenemedi: {ce}")
+
+                    target_env = os.path.join(current_exe_dir, ".env")
+                    if os.path.exists(target_env):
+                        try:
+                            lines = []
+                            with open(target_env, "r", encoding="utf-8") as f:
+                                for line in f:
+                                    if line.strip().startswith("APP_VERSION"):
+                                        lines.append(f"APP_VERSION={new_ver}\n")
+                                    else:
+                                        lines.append(line)
+                            with open(target_env, "w", encoding="utf-8") as f:
+                                f.writelines(lines)
+                        except Exception as ee:
+                            logger.warning(f".env guncellenemedi: {ee}")
 
                 bat_path = os.path.join(tempfile.gettempdir(), "ari_firin_updater.bat")
                 log_path = os.path.join(tempfile.gettempdir(), "ari_firin_update.log")

@@ -66,6 +66,14 @@ def _detect_version() -> str:
     """Sürümü tespit et - öncelik sırasına göre"""
     base_dir = _get_base_dir()
 
+    # 0. Derlenmiş (.exe / frozen) ise, paketle gelen _internal/config.json resmi sürümdür
+    if getattr(sys, 'frozen', False):
+        internal_cfg = base_dir / "_internal" / "config.json"
+        if internal_cfg.exists():
+            ver = _read_from_config_json(internal_cfg)
+            if ver:
+                return ver
+
     # 1. .env dosyası (exe'nin yanında)
     env_candidates = [
         base_dir / ".env",
@@ -92,7 +100,7 @@ def _detect_version() -> str:
         return env_ver
 
     # 4. Hardcoded fallback
-    return "1.0.2"
+    return "1.0.3"
 
 
 # Modül import edildiğinde bir kez hesaplanır
