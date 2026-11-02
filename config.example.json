@@ -1,0 +1,57 @@
+{
+    "database": {
+        "host": "localhost",
+        "port": 5432,
+        "database": "accounting_db",
+        "user": "postgres",
+        "password": "YOUR_DATABASE_PASSWORD"
+    },
+    "application": {
+        "name": "Muhasebe Uygulaması",
+        "version": "1.0.2",
+        "theme": "açık",
+        "language": "tr",
+        "auto_backup": true,
+        "backup_interval": 7,
+        "backup_dir": "backups",
+        "demo_mode": false
+    },
+    "update": {
+        "enabled": true,
+        "url": "http://100.125.79.19:8001/version.txt",
+        "download_url": "http://100.125.79.19:8001/AriFirin_v1.0.2.zip",
+        "check_interval": 7,
+        "project_id": "ari_firin",
+        "server_url": "http://100.125.79.19:8000",
+        "cloud_hub_url": "http://100.125.79.19:8000",
+        "license_key": "YOUR_LICENSE_KEY"
+    },
+    "performance": {
+        "cache_size": 100,
+        "page_size": 50,
+        "connection_pool": 5
+    },
+    "archive": {
+        "days_to_archive": 730,
+        "auto_archive": true,
+        "archive_path": "archive"
+    },
+    "logging": {
+        "level": "INFO",
+        "file": "logs/muhasebe.log",
+        "max_size_mb": 10,
+        "backup_count": 5
+    },
+    "error_report": {
+        "enabled": false,
+        "url": ""
+    },
+    "email": {
+        "smtp_server": "smtp.gmail.com",
+        "smtp_port": 587,
+        "sender_email": "your_email@gmail.com",
+        "sender_password": "YOUR_EMAIL_APP_PASSWORD",
+        "use_tls": true,
+        "use_ssl": false
+    }
+}

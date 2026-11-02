@@ -1,0 +1,17 @@
+services:
+  central-server:
+    build: .
+    container_name: central_server
+    restart: always
+    ports:
+      - "8000:8000"
+    environment:
+      - ADMIN_PASSWORD=admin123
+      - SECRET_KEY=sunas-secret-key-change-this-in-production
+    volumes:
+      - ./data:/app/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3

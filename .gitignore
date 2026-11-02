@@ -1,0 +1,57 @@
+# =====================================================================
+# GÜVENLİK VE GİZLİLİK (Hassas Bilgiler - Asla GitHub'a Gitmez)
+# =====================================================================
+# Şifreler, e-posta ayarları ve sunucu bağlantı konfigürasyonu
+config.json
+config.local.json
+.env
+*.env
+*.dat
+*.key
+*.pem
+*.cert
+
+# Gerçek müşteri veritabanı dökümleri ve SQL yedekleri
+*.sql
+*.db
+*.sqlite
+*.sqlite3
+data/
+backups/
+downloaded_backup.sql
+backup_*.sql
+
+# =====================================================================
+# GELİŞTİRME VE DERLEME ÇIKTILARI (Büyük Boyutlu Dosyalar)
+# =====================================================================
+# Byte-compiled / Python önbellekleri
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# Dağıtım ve paketleme klasörleri (EXE ve ZIP dosyaları)
+build/
+dist/
+*.egg-info/
+*.egg
+*.zip
+
+# Loglar ve geçici dosyalar
+logs/
+*.log
+scratch/
+
+# İşletim sistemi kalıntıları
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+.DS_Store
+
+# Sanal ortamlar ve test kalıntıları
+venv/
+env/
+ENV/
+.venv/
+.pytest_cache/
