@@ -25,6 +25,7 @@ from PyQt5.QtWidgets import QApplication
 from ..core.logger import logger
 from ..core.database import db
 from ..models.user import User
+from ..core.version import APP_VERSION
 from .styles import AppStyles
 
 
@@ -341,7 +342,7 @@ class LoginWindow(QMainWindow):
         self.left_layout.addLayout(self.stats_layout)
         self.left_layout.addStretch(1)
 
-        self.version_lbl = QLabel("v1.0.0 • 2026")
+        self.version_lbl = QLabel(f"v{APP_VERSION} • 2026")
         self.version_lbl.setAlignment(Qt.AlignCenter)
         self.left_layout.addWidget(self.version_lbl)
 

@@ -145,3 +145,4 @@ Yeni bir fırına gittin ve programı ilk kez sıfırdan kuracaksın:
 | **Sonsuz güncelleme uyarısı geliyor** | `download_url` eski kalmış veya `.env` eski sürümde | `updater_service.py` düzeltildi. Pi'de `cp AriFirin_vX.zip AriFirin_v1.0.1.zip` çalıştır. |
 | **Güncelleme indirildi ama kurulmadı** | Uygulama arkada kilitli kaldı | Güncelleme loguna bak: `%TEMP%\ari_firin_update.log` |
 | **Git: "not a git repository" hatası** | Yanlış klasördesin | `cd "D:\Desktop\Arı_Fırın"` komutuyla proje dizinine geç. |
+

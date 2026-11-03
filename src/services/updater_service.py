@@ -173,6 +173,7 @@ class UpdaterService:
                     "Bu güncelleme zorunludur. Güncelleme yapılmadan uygulama başlatılamaz."
                 )
                 QApplication.quit()
+                import time; time.sleep(0.5); os._exit(0)
 
     def _on_up_to_date(self):
         active_win = QApplication.activeWindow()
@@ -303,6 +304,7 @@ class UpdaterService:
                 if current_exe.lower().endswith("python.exe") or current_exe.lower().endswith("pythonw.exe"):
                     os.startfile(installer_path)
                     QApplication.quit()
+                    import time; time.sleep(0.5); os._exit(0)
                     return
 
                 new_exe_dir = os.path.dirname(installer_path)
@@ -361,9 +363,10 @@ ping 127.0.0.1 -n 2 > nul
 tasklist /FI "IMAGENAME eq {os.path.basename(current_exe)}" 2>NUL | find /I "{os.path.basename(current_exe)}" >NUL
 if not errorlevel 1 (
     set /a retry+=1
-    if %retry% LSS 30 (
+    if %retry% LSS 10 (
         goto waitloop
     )
+    taskkill /F /IM "{os.path.basename(current_exe)}" >nul 2>&1
 )
 
 echo Uygulama kapandi, dosyalar kopyalaniyor... >> "{log_path}"
@@ -373,7 +376,7 @@ if exist "{current_exe_dir}\\_internal" (
     move /Y "{current_exe_dir}\\_internal" "{current_exe_dir}\\_internal_old" >nul 2>&1
 )
 
-xcopy /E /Y /I "{new_exe_dir}\\*" "{current_exe_dir}\\" >> "{log_path}" 2>&1
+xcopy /E /Y /I /R /H "{new_exe_dir}\\*" "{current_exe_dir}\\" >> "{log_path}" 2>&1
 
 if exist "{current_exe_dir}\\_internal" (
     echo Guncelleme basarili! >> "{log_path}"
@@ -402,6 +405,7 @@ start "" "{current_exe}"
                 logger.info(f"Güncelleme log dosyası: {log_path}")
 
                 QApplication.quit()
+                import time; time.sleep(0.5); os._exit(0)
             else:
                 QMessageBox.information(
                     active_win, "İndirme Başarılı (Test Doğrulandı)",

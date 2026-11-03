@@ -21,6 +21,7 @@ from PyQt5.QtGui import QColor, QPixmap, QPainter, QPalette
 
 from ..core.logger import logger
 from ..models.user import User
+from ..core.version import APP_VERSION
 from ..models.branch import Branch
 from .styles import AppStyles
 
@@ -339,7 +340,7 @@ class RegisterWindow(QMainWindow):
 
         layout.addStretch()
 
-        version = QLabel("v1.0.0 • 2026")
+        version = QLabel(f"v{APP_VERSION} • 2026")
         version.setAlignment(Qt.AlignCenter)
         version.setStyleSheet("font-size: 9pt; color: #64748b; background: transparent; border: none;")
         layout.addWidget(version)
