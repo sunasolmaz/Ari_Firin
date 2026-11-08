@@ -62,45 +62,55 @@ def _read_from_config_json(config_path: Path) -> str:
     return ""
 
 
+def _parse_v(v_str: str) -> tuple:
+    """Sürüm stringini sayı demetine dönüştürür (örn: '1.0.4' -> (1, 0, 4))"""
+    try:
+        clean = v_str.strip().lstrip("v")
+        parts = tuple(int(x) for x in clean.split(".") if x.isdigit())
+        return parts if parts else (0, 0, 0)
+    except Exception:
+        return (0, 0, 0)
+
+
 def _detect_version() -> str:
-    """Sürümü tespit et - öncelik sırasına göre"""
+    """Sürümü tespit et - tüm geçerli kaynaklar arasından en güncel sürümü seçer"""
     base_dir = _get_base_dir()
+    candidates = []
 
-    # 0. Derlenmiş (.exe / frozen) ise, paketle gelen _internal/config.json resmi sürümdür
-    if getattr(sys, 'frozen', False):
-        internal_cfg = base_dir / "_internal" / "config.json"
-        if internal_cfg.exists():
-            ver = _read_from_config_json(internal_cfg)
-            if ver:
-                return ver
+    # 1. version.txt (kök dizin veya _internal)
+    for v_path in [base_dir / "version.txt", base_dir / "_internal" / "version.txt", Path.cwd() / "version.txt"]:
+        if v_path.exists():
+            try:
+                v = v_path.read_text(encoding="utf-8").strip()
+                if v:
+                    candidates.append(v)
+            except Exception:
+                pass
 
-    # 1. .env dosyası (exe'nin yanında)
-    env_candidates = [
-        base_dir / ".env",
-        Path.cwd() / ".env",
-    ]
-    for env_path in env_candidates:
+    # 2. .env dosyası (exe'nin yanında veya çalışma dizininde)
+    for env_path in [base_dir / ".env", Path.cwd() / ".env"]:
         ver = _read_from_env_file(env_path)
         if ver:
-            return ver
+            candidates.append(ver)
 
-    # 2. config.json (exe'nin yanında)
-    config_candidates = [
-        base_dir / "config.json",
-        Path.cwd() / "config.json",
-    ]
-    for cfg_path in config_candidates:
+    # 3. config.json (exe'nin yanında veya _internal içinde)
+    for cfg_path in [base_dir / "config.json", Path.cwd() / "config.json", base_dir / "_internal" / "config.json"]:
         ver = _read_from_config_json(cfg_path)
         if ver:
-            return ver
+            candidates.append(ver)
 
-    # 3. Ortam değişkeni (en son çare)
+    # 4. Ortam değişkeni (en son çare)
     env_ver = os.environ.get("APP_VERSION", "").strip()
     if env_ver:
-        return env_ver
+        candidates.append(env_ver)
 
-    # 4. Hardcoded fallback
-    return "1.0.4"
+    # 5. Hardcoded derleme taban sürümü (bu kod derlenirken v1.0.4 idi, asla bundan eski olamaz)
+    HARDCODED_FALLBACK = "1.0.4"
+    candidates.append(HARDCODED_FALLBACK)
+
+    # Tüm bulunan sürümler arasından en yüksek geçerli olanı seç
+    best_ver = max(candidates, key=_parse_v)
+    return best_ver
 
 
 # Modül import edildiğinde bir kez hesaplanır

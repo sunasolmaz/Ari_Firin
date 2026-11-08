@@ -7,6 +7,8 @@ Raspberry Pi üzerindeki Merkezi Sunucu ile konuşur.
 
 import os
 import sys
+import json
+import re
 import tempfile
 import threading
 import subprocess
@@ -310,36 +312,56 @@ class UpdaterService:
                 new_exe_dir = os.path.dirname(installer_path)
                 current_exe_dir = os.path.dirname(current_exe)
 
-                # Hedef dizindeki config.json ve .env surum bilgisini yeni surumle guncelle
+                # Hedef dizindeki config.json, _internal/config.json, .env ve version.txt surum bilgisini guncelle
                 new_ver = self.latest_update_info.get("version", "") if self.latest_update_info else ""
                 if new_ver:
-                    target_cfg = os.path.join(current_exe_dir, "config.json")
-                    if os.path.exists(target_cfg):
-                        try:
-                            with open(target_cfg, "r", encoding="utf-8") as f:
-                                cdata = json.load(f)
-                            cdata.setdefault("application", {})["version"] = new_ver
-                            if "update" in cdata and "download_url" in cdata["update"]:
-                                cdata["update"]["download_url"] = re.sub(r'v\d+\.\d+\.\d+', f'v{new_ver}', cdata["update"]["download_url"])
-                            with open(target_cfg, "w", encoding="utf-8") as f:
-                                json.dump(cdata, f, indent=4, ensure_ascii=False)
-                        except Exception as ce:
-                            logger.warning(f"config.json guncellenemedi: {ce}")
+                    # 1. config.json dosyalarini guncelle (hem ana dizin hem _internal hem de indirilen paket)
+                    cfg_targets = [
+                        os.path.join(current_exe_dir, "config.json"),
+                        os.path.join(current_exe_dir, "_internal", "config.json"),
+                        os.path.join(new_exe_dir, "_internal", "config.json"),
+                    ]
+                    for target_cfg in cfg_targets:
+                        if os.path.exists(target_cfg):
+                            try:
+                                with open(target_cfg, "r", encoding="utf-8") as f:
+                                    cdata = json.load(f)
+                                cdata.setdefault("application", {})["version"] = new_ver
+                                if "update" in cdata and "download_url" in cdata["update"]:
+                                    cdata["update"]["download_url"] = re.sub(r'v\d+\.\d+\.\d+', f'v{new_ver}', cdata["update"]["download_url"])
+                                with open(target_cfg, "w", encoding="utf-8") as f:
+                                    json.dump(cdata, f, indent=4, ensure_ascii=False)
+                            except Exception as ce:
+                                logger.warning(f"config.json guncellenemedi ({target_cfg}): {ce}")
 
-                    target_env = os.path.join(current_exe_dir, ".env")
-                    if os.path.exists(target_env):
+                    # 2. .env dosyasini guncelle
+                    env_targets = [
+                        os.path.join(current_exe_dir, ".env"),
+                        os.path.join(new_exe_dir, ".env"),
+                    ]
+                    for target_env in env_targets:
+                        if os.path.exists(target_env):
+                            try:
+                                lines = []
+                                with open(target_env, "r", encoding="utf-8") as f:
+                                    for line in f:
+                                        if line.strip().startswith("APP_VERSION"):
+                                            lines.append(f"APP_VERSION={new_ver}\n")
+                                        else:
+                                            lines.append(line)
+                                with open(target_env, "w", encoding="utf-8") as f:
+                                    f.writelines(lines)
+                            except Exception as ee:
+                                logger.warning(f".env guncellenemedi ({target_env}): {ee}")
+
+                    # 3. version.txt dosyasini yaz (hem ana dizin hem paket)
+                    for v_dir in [current_exe_dir, new_exe_dir]:
                         try:
-                            lines = []
-                            with open(target_env, "r", encoding="utf-8") as f:
-                                for line in f:
-                                    if line.strip().startswith("APP_VERSION"):
-                                        lines.append(f"APP_VERSION={new_ver}\n")
-                                    else:
-                                        lines.append(line)
-                            with open(target_env, "w", encoding="utf-8") as f:
-                                f.writelines(lines)
-                        except Exception as ee:
-                            logger.warning(f".env guncellenemedi: {ee}")
+                            v_file = os.path.join(v_dir, "version.txt")
+                            with open(v_file, "w", encoding="utf-8") as f:
+                                f.write(new_ver.strip())
+                        except Exception as ve:
+                            logger.warning(f"version.txt yazilamadi: {ve}")
 
                 bat_path = os.path.join(tempfile.gettempdir(), "ari_firin_updater.bat")
                 log_path = os.path.join(tempfile.gettempdir(), "ari_firin_update.log")

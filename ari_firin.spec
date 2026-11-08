@@ -11,6 +11,8 @@ HERE = os.path.abspath(os.path.dirname('main.py'))
 datas = []
 if os.path.exists('config.json'):
     datas.append(('config.json', '.'))
+if os.path.exists('version.txt'):
+    datas.append(('version.txt', '.'))
 if os.path.exists('resources'):
     datas.append(('resources', 'resources'))
 if os.path.exists('src/ui/assets'):
