@@ -324,7 +324,7 @@ class UpdaterService:
                     for target_cfg in cfg_targets:
                         if os.path.exists(target_cfg):
                             try:
-                                with open(target_cfg, "r", encoding="utf-8") as f:
+                                with open(target_cfg, "r", encoding="utf-8-sig") as f:
                                     cdata = json.load(f)
                                 cdata.setdefault("application", {})["version"] = new_ver
                                 if "update" in cdata and "download_url" in cdata["update"]:

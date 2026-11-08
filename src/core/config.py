@@ -94,7 +94,7 @@ class Config:
         # ✅ DÜZELTİLDİ: "config varsa üzerine yazma" mantığı
         if config_path.exists():
             try:
-                with open(config_path, 'r', encoding='utf-8') as f:
+                with open(config_path, 'r', encoding='utf-8-sig') as f:
                     loaded_config = json.load(f)
                     # Deep merge: loaded önceliklidir
                     self._config = self._merge_configs(default_config, loaded_config)

@@ -54,7 +54,7 @@ def _read_from_config_json(config_path: Path) -> str:
     if not config_path.exists():
         return ""
     try:
-        with open(config_path, 'r', encoding='utf-8') as f:
+        with open(config_path, 'r', encoding='utf-8-sig') as f:
             data = json.load(f)
             return str(data.get("application", {}).get("version", "")).strip()
     except Exception:
