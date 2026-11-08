@@ -527,7 +527,10 @@ class StockCountService:
             return False, f"Kaydetme hatası: {str(e)}"
 
     def add_item(self, session_id: int, item_data: Dict) -> Tuple[bool, str, Optional[int]]:
-        """Tabloya yeni tek bir ürün/kalem ekler"""
+        """
+        Tabloya ürün/kalem ekler.
+        Eğer ürün zaten tabloda varsa YENİ SATIR AÇMAZ; gelen/sayım miktarlarını mevcut satırın üzerine ekler/günceller.
+        """
         try:
             cat = (item_data.get('category') or '').strip()
             pname = (item_data.get('product_name') or '').strip()
@@ -542,6 +545,73 @@ class StockCountService:
             waste = float(item_data.get('waste_qty') or 0.0)
             physical = float(item_data.get('physical_count') or 0.0)
             cost = float(item_data.get('unit_cost') or 0.0)
+
+            # 🔍 Bu ürün bu oturumda zaten var mı kontrol et (çift satır oluşmasını engelle)
+            existing = db.fetch_one("""
+                SELECT id, category, unit, opening_stock, incoming_stock, physical_count,
+                       transfer_out_qty, waste_qty, unit_cost
+                FROM StockCountItems
+                WHERE session_id = %s AND LOWER(TRIM(product_name)) = LOWER(TRIM(%s))
+                ORDER BY id ASC LIMIT 1
+            """, (session_id, pname))
+
+            if existing:
+                item_id = existing['id']
+                ex_opening = float(existing.get('opening_stock') or 0.0)
+                ex_incoming = float(existing.get('incoming_stock') or 0.0)
+                ex_physical = float(existing.get('physical_count') or 0.0)
+                ex_transfer = float(existing.get('transfer_out_qty') or 0.0)
+                ex_waste = float(existing.get('waste_qty') or 0.0)
+                ex_cost = float(existing.get('unit_cost') or 0.0)
+
+                # İmalattan veya şubeden ekstra gelen miktarı mevcut gelene ekle
+                new_incoming = ex_incoming + incoming
+                new_opening = opening if opening > 0 and ex_opening == 0 else ex_opening
+                new_physical = physical if physical > 0 else ex_physical
+                new_transfer = ex_transfer + transfer_out
+                new_waste = ex_waste + waste if waste > 0 else ex_waste
+                new_cost = cost if cost > 0 else ex_cost
+
+                total_avail = new_opening + new_incoming
+                sold = max(0.0, total_avail - new_physical - new_transfer - new_waste)
+                waste_val = new_waste * new_cost
+                rem_val = new_physical * new_cost
+                sold_val = sold * new_cost
+
+                db.execute_query("""
+                    UPDATE StockCountItems
+                    SET incoming_stock = %s,
+                        opening_stock = %s,
+                        physical_count = %s,
+                        transfer_out_qty = %s,
+                        waste_qty = %s,
+                        waste_value = %s,
+                        sold_out = %s,
+                        unit_cost = %s,
+                        remaining_value = %s,
+                        sold_value = %s,
+                        updated_at = CURRENT_TIMESTAMP
+                    WHERE id = %s
+                """, (
+                    new_incoming, new_opening, new_physical, new_transfer,
+                    new_waste, waste_val, sold, new_cost, rem_val, sold_val,
+                    item_id
+                ))
+
+                if waste > 0:
+                    try:
+                        m_desc = f"Gün Sonu Fire | {pname} (+{waste} {unit}) - Maliyet: {new_cost:.2f} TL"
+                        db.execute_query("""
+                            INSERT INTO StockMovements (
+                                session_id, date, category, product_name,
+                                movement_type, quantity, unit, description
+                            ) VALUES (%s, CURRENT_DATE, %s, %s, 'Zayi', %s, %s, %s)
+                        """, (session_id, cat or existing.get('category'), pname, waste, unit, m_desc))
+                    except Exception as me:
+                        logger.warning(f"add_item fire güncelleme hatası: {me}")
+
+                msg = f"'{pname}' zaten mevcuttu; gelen miktar ({incoming:g}) mevcut satırın üzerine eklendi (Toplam Gelen: {new_incoming:g})."
+                return True, msg, item_id
 
             total_avail = opening + incoming
             sold = max(0.0, total_avail - physical - transfer_out - waste)
@@ -587,6 +657,57 @@ class StockCountService:
         except Exception as e:
             logger.error(f"add_item hatası: {e}")
             return False, f"Kalem eklenemedi: {str(e)}", None
+
+    def update_item(self, item_id: int, item_data: Dict) -> Tuple[bool, str]:
+        """Tek bir ürün/kalem kaydını günceller ve formülleri anında yeniden hesaplar"""
+        try:
+            cat = (item_data.get('category') or '').strip()
+            pname = (item_data.get('product_name') or '').strip()
+            unit = (item_data.get('unit') or 'Adet').strip()
+
+            if not pname:
+                return False, "Ürün adı boş bırakılamaz!"
+
+            opening = float(item_data.get('opening_stock') or 0.0)
+            incoming = float(item_data.get('incoming_stock') or 0.0)
+            transfer_out = float(item_data.get('transfer_out_qty') or 0.0)
+            waste = float(item_data.get('waste_qty') or 0.0)
+            physical = float(item_data.get('physical_count') or 0.0)
+            cost = float(item_data.get('unit_cost') or 0.0)
+
+            total_avail = opening + incoming
+            sold = max(0.0, total_avail - physical - transfer_out - waste)
+            waste_val = waste * cost
+            rem_val = physical * cost
+            sold_val = sold * cost
+
+            db.execute_query("""
+                UPDATE StockCountItems
+                SET category = %s,
+                    product_name = %s,
+                    unit = %s,
+                    opening_stock = %s,
+                    incoming_stock = %s,
+                    transfer_out_qty = %s,
+                    waste_qty = %s,
+                    waste_value = %s,
+                    physical_count = %s,
+                    sold_out = %s,
+                    unit_cost = %s,
+                    remaining_value = %s,
+                    sold_value = %s,
+                    updated_at = CURRENT_TIMESTAMP
+                WHERE id = %s
+            """, (
+                cat, pname, unit,
+                opening, incoming, transfer_out, waste, waste_val, physical,
+                sold, cost, rem_val, sold_val,
+                item_id
+            ))
+            return True, f"'{pname}' kalemi güncellendi."
+        except Exception as e:
+            logger.error(f"update_item hatası: {e}")
+            return False, f"Güncelleme hatası: {str(e)}"
 
     def delete_item(self, item_id: int) -> Tuple[bool, str]:
         """Sayım tablosundan bir ürünü siler"""
@@ -1493,15 +1614,60 @@ class StockCountService:
 
     # ==================== GÜN SONU BİRLEŞİK SAYIM YÖNETİMİ ====================
 
+    def get_available_categories(self, branch_id: Optional[int] = None) -> List[str]:
+        """Sayım ve ürün kategorilerini getirir (veritabanından dinamik çeker)"""
+        try:
+            db.ensure_stock_count_tables()
+            cats = set()
+            try:
+                rows = db.fetch_all("SELECT DISTINCT category FROM StockCountTemplateItems WHERE is_active = TRUE AND category IS NOT NULL") or []
+                for r in rows:
+                    if r.get('category') and r['category'].strip():
+                        cats.add(r['category'].strip())
+            except Exception:
+                pass
+
+            try:
+                rows2 = db.fetch_all("SELECT DISTINCT category FROM StockCountItems WHERE category IS NOT NULL") or []
+                for r in rows2:
+                    if r.get('category') and r['category'].strip():
+                        cats.add(r['category'].strip())
+            except Exception:
+                pass
+
+            try:
+                rows3 = db.fetch_all("SELECT DISTINCT category FROM Products WHERE is_active = TRUE AND category IS NOT NULL AND TRIM(category) != ''") or []
+                for r in rows3:
+                    if r.get('category') and r['category'].strip():
+                        cats.add(r['category'].strip())
+            except Exception:
+                pass
+
+            defaults = [
+                "Tezgah Ürünleri",
+                "Pastalar & Tatlılar",
+                "Meşrubatlar",
+                "Unlu Mamüller",
+                "Pasta Süsleri & Malzemeler"
+            ]
+            for d in defaults:
+                cats.add(d)
+
+            return sorted(list(cats))
+        except Exception as e:
+            logger.error(f"get_available_categories hatası: {e}")
+            return ["Tezgah Ürünleri", "Pastalar & Tatlılar", "Meşrubatlar", "Unlu Mamüller", "Pasta Süsleri & Malzemeler"]
+
     def get_or_create_daily_session(
         self,
         branch_id: int,
         date_str: str,
-        user_id: Optional[int] = None
+        user_id: Optional[int] = None,
+        category: Optional[str] = None
     ) -> Tuple[bool, str, Dict, List[Dict]]:
         """
-        Belirtilen tarih (YYYY-MM-DD) için gün sonu sayım oturumunu getirir veya otomatik oluşturur.
-        Eğer yeni oluşturuluyorsa bir önceki günün/oturumun fiziksel sayımını bugünün devri (sabah stoku) yapar.
+        Belirtilen tarih (YYYY-MM-DD) ve isteğe bağlı kategori için gün sonu sayım oturumunu getirir veya otomatik oluşturur.
+        Müşteri kategori kategori (örn: Tezgah Ürünleri, Pastalar vb.) sayım yapabilir ve aynı günde birden fazla oturum açabilir.
         Döndürür: (success, message, session_dict, items_list)
         """
         try:
@@ -1510,27 +1676,59 @@ class StockCountService:
                 date_str = datetime.now().strftime("%Y-%m-%d")
 
             target_dt = datetime.strptime(date_str, "%Y-%m-%d").date()
-            period_name = f"{target_dt.strftime('%d.%m.%Y')} Gün Sonu"
 
-            # 1. Bu tarih için kayıtlı oturum var mı?
-            existing_session = db.fetch_one("""
-                SELECT id, branch_id, period_name, status, notes, created_at, updated_at
-                FROM StockCountSessions
-                WHERE branch_id = %s AND (created_at::date = %s OR period_name LIKE %s)
-                ORDER BY id DESC LIMIT 1
-            """, (branch_id, date_str, f"%{target_dt.strftime('%d.%m.%Y')}%"))
+            # Kategori adını temizle (emojiler veya Genel Sayım ifadeleri)
+            clean_cat = None
+            if category:
+                raw_c = str(category).replace("🥖", "").replace("🎂", "").replace("🥤", "").replace("🧁", "").replace("⭐", "").strip()
+                if raw_c and raw_c != "Tüm Kategoriler" and "Tüm Kategoriler" not in raw_c and raw_c != "Genel Sayım":
+                    clean_cat = raw_c
+
+            if clean_cat:
+                period_name = f"{target_dt.strftime('%d.%m.%Y')} — {clean_cat}"
+                existing_session = db.fetch_one("""
+                    SELECT id, branch_id, period_name, status, notes, created_at, updated_at
+                    FROM StockCountSessions
+                    WHERE branch_id = %s AND (
+                        (created_at::date = %s AND (period_name = %s OR period_name LIKE %s))
+                        OR period_name = %s
+                    )
+                    ORDER BY id DESC LIMIT 1
+                """, (branch_id, date_str, period_name, f"%{clean_cat}%", period_name))
+            else:
+                period_name = f"{target_dt.strftime('%d.%m.%Y')} Gün Sonu"
+                existing_session = db.fetch_one("""
+                    SELECT id, branch_id, period_name, status, notes, created_at, updated_at
+                    FROM StockCountSessions
+                    WHERE branch_id = %s AND (
+                        (created_at::date = %s AND (period_name = %s OR period_name NOT LIKE '%%—%%'))
+                        OR period_name = %s
+                    )
+                    ORDER BY id DESC LIMIT 1
+                """, (branch_id, date_str, period_name, period_name))
 
             if existing_session:
                 sess_id = existing_session['id']
+                # İmalathaneden gelen sevkiyatları güncel tut
+                self.sync_daily_production_shipments(branch_id, sess_id, date_str, category=clean_cat)
                 items = self.get_session_items(sess_id)
-                return True, "Mevcut gün sonu sayımı yüklendi.", dict(existing_session), items
+                return True, "Mevcut sayım yüklendi.", dict(existing_session), items
 
-            # 2. Yoksa bir önceki oturumu bul (devir için)
-            prev_session = db.fetch_one("""
-                SELECT id FROM StockCountSessions
-                WHERE branch_id = %s AND created_at::date < %s
-                ORDER BY created_at DESC, id DESC LIMIT 1
-            """, (branch_id, date_str))
+            # 2. Yoksa bir önceki oturumu bul (dünden devir için)
+            prev_session = None
+            if clean_cat:
+                prev_session = db.fetch_one("""
+                    SELECT id FROM StockCountSessions
+                    WHERE branch_id = %s AND created_at::date < %s AND period_name LIKE %s
+                    ORDER BY created_at DESC, id DESC LIMIT 1
+                """, (branch_id, date_str, f"%{clean_cat}%"))
+
+            if not prev_session:
+                prev_session = db.fetch_one("""
+                    SELECT id FROM StockCountSessions
+                    WHERE branch_id = %s AND created_at::date < %s
+                    ORDER BY created_at DESC, id DESC LIMIT 1
+                """, (branch_id, date_str))
 
             if not prev_session:
                 prev_session = db.fetch_one("""
@@ -1539,7 +1737,81 @@ class StockCountService:
                     ORDER BY created_at DESC, id DESC LIMIT 1
                 """, (branch_id,))
 
-            # Gün sonu oturumu tamamen boş olarak başlatılır (0 kalem)
+            items_to_insert = []
+            if prev_session:
+                prev_items = db.fetch_all("""
+                    SELECT category, product_name, unit, physical_count, unit_cost, display_order 
+                    FROM StockCountItems 
+                    WHERE session_id = %s
+                    ORDER BY display_order ASC, id ASC
+                """, (prev_session['id'],)) or []
+                for pi in prev_items:
+                    items_to_insert.append({
+                        'category': pi.get('category') or '',
+                        'product_name': pi.get('product_name') or '',
+                        'unit': pi.get('unit') or 'Adet',
+                        'opening': float(pi.get('physical_count') or 0.0),
+                        'cost': float(pi.get('unit_cost') or 0.0),
+                        'order': int(pi.get('display_order') or 0)
+                    })
+
+            if clean_cat:
+                items_to_insert = [
+                    itm for itm in items_to_insert 
+                    if clean_cat.lower() in (itm.get('category') or '').lower() or (itm.get('category') or '').lower() in clean_cat.lower()
+                ]
+
+            if not items_to_insert:
+                branch_products = []
+                # Önce StockCountTemplateItems tablosundan çekmeyi dene
+                try:
+                    if clean_cat:
+                        branch_products = db.fetch_all("""
+                            SELECT product_name as name, category, unit, 0.0 as purchase_price 
+                            FROM StockCountTemplateItems 
+                            WHERE is_active = TRUE AND (category ILIKE %s OR product_name ILIKE %s)
+                            ORDER BY display_order ASC, product_name ASC
+                        """, (f"%{clean_cat}%", f"%{clean_cat}%")) or []
+                    else:
+                        branch_products = db.fetch_all("""
+                            SELECT product_name as name, category, unit, 0.0 as purchase_price 
+                            FROM StockCountTemplateItems 
+                            WHERE is_active = TRUE
+                            ORDER BY category ASC, display_order ASC, product_name ASC
+                        """) or []
+                except Exception as te:
+                    logger.warning(f"StockCountTemplateItems okunamadı: {te}")
+
+                # Alternatif olarak Products tablosunu güvenli dene
+                if not branch_products:
+                    try:
+                        if clean_cat:
+                            branch_products = db.fetch_all("""
+                                SELECT name, category, unit, purchase_price 
+                                FROM Products 
+                                WHERE is_active = TRUE AND (category ILIKE %s OR name ILIKE %s)
+                                ORDER BY name ASC
+                            """, (f"%{clean_cat}%", f"%{clean_cat}%")) or []
+                        else:
+                            branch_products = db.fetch_all("""
+                                SELECT name, category, unit, purchase_price 
+                                FROM Products 
+                                WHERE is_active = TRUE
+                                ORDER BY category ASC, name ASC
+                            """) or []
+                    except Exception:
+                        branch_products = []
+
+                for idx, bp in enumerate(branch_products):
+                    items_to_insert.append({
+                        'category': bp.get('category') or (clean_cat or 'Unlu Mamül'),
+                        'product_name': bp.get('name') or '',
+                        'unit': bp.get('unit') or 'Adet',
+                        'opening': 0.0,
+                        'cost': float(bp.get('purchase_price') or 0.0),
+                        'order': idx + 1
+                    })
+
             with db.transaction():
                 new_session_id = db.execute_query("""
                     INSERT INTO StockCountSessions (branch_id, period_name, status, created_by, created_at, updated_at)
@@ -1550,14 +1822,97 @@ class StockCountService:
                 if not new_session_id:
                     raise ValueError("Gün sonu oturumu açılamadı!")
 
+                for item in items_to_insert:
+                    db.execute_query("""
+                        INSERT INTO StockCountItems (
+                            session_id, category, product_name, unit,
+                            opening_stock, incoming_stock, physical_count,
+                            sold_out, unit_cost, remaining_value, sold_value,
+                            display_order
+                        ) VALUES (%s, %s, %s, %s, %s, 0.0, %s, 0.0, %s, %s, 0.0, %s)
+                    """, (
+                        new_session_id, item['category'], item['product_name'], item['unit'],
+                        item['opening'], item['opening'], item['cost'],
+                        item['opening'] * item['cost'], item['order']
+                    ))
+
+            # İmalathaneden gelen güncel sevkiyatları yeni oturuma da entegre et
+            self.sync_daily_production_shipments(branch_id, new_session_id, date_str, category=clean_cat)
+
             created_sess = self.get_session(new_session_id)
-            items = []
-            logger.info(f"✅ Gün sonu sayım oturumu boş olarak hazırlandı: ID={new_session_id}, Tarih={date_str}")
-            return True, f"{target_dt.strftime('%d.%m.%Y')} gün sonu sayımı hazırlandı.", created_sess, items
+            items = self.get_session_items(new_session_id)
+            logger.info(f"✅ Günlük sayım oturumu hazırlandı: ID={new_session_id}, İsim={period_name}, Tarih={date_str}, Kalem={len(items)}")
+            return True, f"{period_name} sayımı hazırlandı.", created_sess, items
 
         except Exception as e:
             logger.error(f"get_or_create_daily_session hatası: {e}")
             return False, f"Oturum hatası: {str(e)}", {}, []
+
+    def sync_daily_production_shipments(self, branch_id: int, session_id: int, date_str: str, category: Optional[str] = None):
+        """
+        İmalathaneden bu şubeye belirtilen tarihte sevk edilen tüm ürünleri
+        StockCountItems tablosuna 'Gelen (incoming_stock)' olarak yansıtır.
+        """
+        try:
+            sql = """
+                SELECT bsi.product_name, bsi.category, bsi.unit,
+                       COALESCE(SUM(bsi.quantity), 0) as total_incoming,
+                       COALESCE(AVG(bsi.unit_price), 0) as avg_price
+                FROM BranchShipmentItems bsi
+                JOIN BranchShipments bs ON bs.id = bsi.shipment_id
+                WHERE bs.target_branch_id = %s AND bs.shipment_date = %s
+                GROUP BY bsi.product_name, bsi.category, bsi.unit
+            """
+            shipped_items = db.fetch_all(sql, (branch_id, date_str)) or []
+            if not shipped_items:
+                return
+
+            with db.transaction():
+                for s in shipped_items:
+                    pname = (s.get('product_name') or '').strip()
+                    if not pname:
+                        continue
+                    cat = s.get('category') or 'Unlu Mamül'
+                    unit = s.get('unit') or 'Adet'
+                    incoming_qty = float(s.get('total_incoming') or 0.0)
+                    cost = float(s.get('avg_price') or 0.0)
+
+                    # Bu oturumda ürün var mı?
+                    exist = db.fetch_one("""
+                        SELECT id, opening_stock, incoming_stock, physical_count, unit_cost
+                        FROM StockCountItems
+                        WHERE session_id = %s AND LOWER(TRIM(product_name)) = LOWER(TRIM(%s))
+                        LIMIT 1
+                    """, (session_id, pname))
+
+                    if exist:
+                        cur_incoming = float(exist.get('incoming_stock') or 0.0)
+                        final_incoming = max(cur_incoming, incoming_qty)
+                        db.execute_query("""
+                            UPDATE StockCountItems 
+                            SET incoming_stock = %s,
+                                updated_at = CURRENT_TIMESTAMP
+                            WHERE id = %s
+                        """, (final_incoming, exist['id']))
+                    else:
+                        # Eğer belirli bir kategori sayımı ise, farklı kategorideki ürünü ekleme
+                        if category:
+                            c_low = category.lower()
+                            if c_low not in cat.lower() and cat.lower() not in c_low:
+                                continue
+
+                        db.execute_query("""
+                            INSERT INTO StockCountItems (
+                                session_id, category, product_name, unit,
+                                opening_stock, incoming_stock, physical_count,
+                                sold_out, unit_cost, remaining_value, sold_value,
+                                display_order
+                            ) VALUES (%s, %s, %s, %s, 0.0, %s, 0.0, 0.0, %s, 0.0, 0.0, 99)
+                        """, (session_id, cat, pname, unit, incoming_qty, cost))
+
+            logger.info(f"✅ İmalat sevkiyatları sayım oturumuna senkronize edildi: Oturum={session_id}, Şube={branch_id}, Tarih={date_str}")
+        except Exception as e:
+            logger.error(f"sync_daily_production_shipments hatası: {e}")
 
     def save_daily_closing(
         self,

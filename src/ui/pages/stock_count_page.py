@@ -19,7 +19,7 @@ from PyQt5.QtWidgets import (
     QLineEdit, QComboBox, QMessageBox, QDialog, QDialogButtonBox,
     QDoubleSpinBox, QTextEdit, QScrollArea, QGraphicsDropShadowEffect,
     QHeaderView, QTabWidget, QDateEdit, QSizePolicy, QFileDialog,
-    QAbstractItemView, QCheckBox
+    QAbstractItemView, QCheckBox, QApplication, QInputDialog
 )
 from PyQt5.QtCore import Qt, QDate
 from PyQt5.QtGui import QColor, QFont
@@ -32,6 +32,8 @@ from ...services.stock_count_service import (
     DEFAULT_STOCK_COUNT_TEMPLATE
 )
 from ..styles import AppStyles
+from PyQt5.QtWidgets import QTreeWidget, QTreeWidgetItem, QSplitter
+from ...services.production_service import production_service
 
 
 # ==================== YARDIMCI SAYISAL FONKSİYONLAR ====================
@@ -179,11 +181,18 @@ class NewStockCountSessionDialog(QDialog):
 
 
 class AddStockCountItemDialog(QDialog):
-    """Tabloya Yeni Satır / Ürün Ekleme Penceresi (Canlı Fire Tutarı ve Net Tutar Hesaplamalı)"""
+    """Tabloya Yeni Satır / Ürün Ekleme ve Var Olanı Düzenleme Penceresi"""
 
-    def __init__(self, parent=None, categories: Optional[List[str]] = None):
+    def __init__(self, parent=None, categories: Optional[List[str]] = None, item_data: Optional[Dict] = None):
         super().__init__(parent)
-        self.setWindowTitle("➕ Yeni Ürün / Satır Ekle")
+        self.item_data = item_data
+        self.item_id = item_data.get('id') if item_data else None
+
+        if item_data:
+            self.setWindowTitle("✏️ Sayım Kalemini Düzenle / Güncelle")
+        else:
+            self.setWindowTitle("➕ Yeni Ürün / Satır Ekle")
+
         self.setMinimumWidth(480)
         self.setStyleSheet(f"""
             QDialog {{ background-color: {AppStyles.BG_MEDIUM}; color: {AppStyles.TEXT_PRIMARY}; }}
@@ -201,13 +210,16 @@ class AddStockCountItemDialog(QDialog):
             }}
         """)
         self.init_ui(categories or ["Tezgah Ürünleri", "Meşrubatlar", "Pasta Süsleri", "Diğer"])
+        if item_data:
+            self.load_item_data(item_data)
 
     def init_ui(self, categories: List[str]):
         layout = QVBoxLayout(self)
         layout.setSpacing(12)
         layout.setContentsMargins(22, 22, 22, 22)
 
-        title = QLabel("📦 Yeni Sayım Kalemi Ekle")
+        header_title = "✏️ Sayım Kalemini Düzenle" if self.item_data else "📦 Yeni Sayım Kalemi Ekle"
+        title = QLabel(header_title)
         title.setStyleSheet(f"font-size: 13pt; font-weight: bold; color: {AppStyles.PRIMARY};")
         layout.addWidget(title)
 
@@ -243,7 +255,7 @@ class AddStockCountItemDialog(QDialog):
         form_grid.addWidget(self.open_spin, 3, 1)
 
         # 4. Gelen (Giren)
-        form_grid.addWidget(QLabel("Gelen (Giren):"), 4, 0)
+        form_grid.addWidget(QLabel("Gelen (İmalat + Pişirim):"), 4, 0)
         self.in_spin = QDoubleSpinBox()
         self.in_spin.setRange(0, 9999999.99)
         self.in_spin.setDecimals(2)
@@ -368,7 +380,8 @@ class AddStockCountItemDialog(QDialog):
         cancel_btn.clicked.connect(self.reject)
         btn_layout.addWidget(cancel_btn)
 
-        save_btn = QPushButton("➕ Kalemi Ekle")
+        save_label = "💾 Değişiklikleri Kaydet" if self.item_data else "➕ Kalemi Ekle"
+        save_btn = QPushButton(save_label)
         save_btn.setCursor(Qt.PointingHandCursor)
         save_btn.setStyleSheet(f"""
             QPushButton {{
@@ -389,6 +402,22 @@ class AddStockCountItemDialog(QDialog):
         layout.addLayout(btn_layout)
 
         # İlk hesaplama
+        self.recalculate()
+
+    def load_item_data(self, item_data: Dict):
+        """Mevcut kalem verilerini form alanlarına doldurur"""
+        cat = item_data.get('category', '')
+        if cat:
+            self.cat_combo.setCurrentText(cat)
+        self.pname_edit.setText(item_data.get('product_name', ''))
+        unit = item_data.get('unit', 'Adet')
+        if unit:
+            self.unit_combo.setCurrentText(unit)
+        self.open_spin.setValue(float(item_data.get('opening_stock') or 0.0))
+        self.in_spin.setValue(float(item_data.get('incoming_stock') or 0.0))
+        self.phys_spin.setValue(float(item_data.get('physical_count') or 0.0))
+        self.waste_spin.setValue(float(item_data.get('waste_qty') or 0.0))
+        self.cost_spin.setValue(float(item_data.get('unit_cost') or 0.0))
         self.recalculate()
 
     def recalculate(self):
@@ -456,7 +485,7 @@ class AddStockCountItemDialog(QDialog):
         gross_qty = tot_avail if tot_avail > 0 else phys_qty
         net_total = max(0.0, (gross_qty * cost) - waste_val)
 
-        return {
+        res = {
             "category": self.cat_combo.currentText().strip() or "Diğer",
             "product_name": self.pname_edit.text().strip(),
             "unit": self.unit_combo.currentText().strip() or "Adet",
@@ -468,6 +497,9 @@ class AddStockCountItemDialog(QDialog):
             "total_value": net_total,
             "unit_cost": cost
         }
+        if getattr(self, 'item_id', None):
+            res["id"] = self.item_id
+        return res
 
 
 class AddStockMovementDialog(QDialog):
@@ -633,6 +665,38 @@ class AddStockMovementDialog(QDialog):
         }
 
 
+# ==================== 🖱️ AKICI SCROLL DESTEKLİ TABLO BİLEŞENİ ====================
+
+class SmoothScrollTableWidget(QTableWidget):
+    """
+    Fare tekerleği (mouse scroll) ile pürüzsüz ve akıcı kayma (smooth pixel scrolling) sağlayan gelişmiş tablo.
+    - Dikeyde piksel bazlı akıcı kayma (ScrollPerPixel)
+    - Yatayda piksel bazlı akıcı kayma (Shift + Fare Tekerleği veya yatay tekerlek / touchpad hareketi)
+    - Hızlı ve hassas tepki veren adım boyutu (singleStep: 28)
+    """
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.setVerticalScrollMode(QAbstractItemView.ScrollPerPixel)
+        self.setHorizontalScrollMode(QAbstractItemView.ScrollPerPixel)
+        self.verticalScrollBar().setSingleStep(28)
+        self.horizontalScrollBar().setSingleStep(28)
+
+    def wheelEvent(self, event):
+        angle = event.angleDelta()
+        modifiers = event.modifiers()
+        # Shift tuşu basılıysa veya yatay açı dikeyden belirgin büyükse yatay kaydır
+        if (modifiers & Qt.ShiftModifier) or (abs(angle.x()) > abs(angle.y())):
+            delta = angle.x() if abs(angle.x()) > 0 else angle.y()
+            sb = self.horizontalScrollBar()
+            sb.setValue(sb.value() - delta)
+            event.accept()
+        else:
+            delta = angle.y()
+            sb = self.verticalScrollBar()
+            sb.setValue(sb.value() - delta)
+            event.accept()
+
+
 # ==================== 🌙 GÜN SONU BİRLEŞİK SAYIM DİALOGU ====================
 
 class DailyClosingStockCountDialog(QDialog):
@@ -662,7 +726,7 @@ class DailyClosingStockCountDialog(QDialog):
         "Ürün Adı",
         "Birim",
         "Sabah / Devir",
-        "Gelen (Giren)",
+        "Gelen / Pişirilen",
         "Toplam Mevcut",
         "Akşam Kalan (Sayım)",
         "Günün Firesi",
@@ -683,9 +747,14 @@ class DailyClosingStockCountDialog(QDialog):
         self._is_calculating = False
         self._has_unsaved_changes = False
 
-        self.setWindowTitle("🌙 Gün Sonu Stok ve Fire Sayımı — Arı Fırın")
-        self.resize(1240, 780)
-        self.setMinimumWidth(1050)
+        self.setWindowTitle("📋 Yeni Günlük Stok Sayımı — Arı Fırın")
+        screen = QApplication.primaryScreen()
+        avail = screen.availableGeometry() if screen else None
+        target_w = min(1240, avail.width() - 40) if avail else 1240
+        target_h = min(780, avail.height() - 50) if avail else 760
+        self.resize(target_w, target_h)
+        self.setMinimumWidth(min(1000, target_w))
+        self.setMinimumHeight(min(540, target_h))
         self.setStyleSheet(f"""
             QDialog {{ background-color: {AppStyles.BG_MEDIUM}; color: {AppStyles.TEXT_PRIMARY}; }}
             QLabel {{ color: {AppStyles.TEXT_PRIMARY}; }}
@@ -740,9 +809,9 @@ class DailyClosingStockCountDialog(QDialog):
         # Başlık
         title_box = QVBoxLayout()
         title_box.setSpacing(2)
-        lbl_title = QLabel("🌙 Gün Sonu Stok & Fire Sayımı")
+        lbl_title = QLabel("📋 Yeni Günlük Stok Sayımı")
         lbl_title.setStyleSheet(f"font-size: 13.5pt; font-weight: bold; color: {AppStyles.PRIMARY};")
-        lbl_sub = QLabel("Akşam kalan tezgah stoğunu ve günün zayiatını aynı satırda kolayca giriniz.")
+        lbl_sub = QLabel("Kategori seçip ürünlerinizi ekleyerek gün sonu stok ve fire sayımını kolayca tamamlayın.")
         lbl_sub.setStyleSheet(f"font-size: 8.5pt; color: {AppStyles.TEXT_SECONDARY};")
         title_box.addWidget(lbl_title)
         title_box.addWidget(lbl_sub)
@@ -828,77 +897,116 @@ class DailyClosingStockCountDialog(QDialog):
         kpi_strip = self.create_kpi_strip()
         layout.addWidget(kpi_strip)
 
-        # 3. FİLTRE VE ARAMA BARI
-        search_bar = QHBoxLayout()
-        search_bar.setSpacing(10)
-
-        self.search_edit = QLineEdit()
-        self.search_edit.setPlaceholderText("🔍 Ürün adı veya kategori ara...")
-        self.search_edit.setFixedHeight(30)
-        self.search_edit.setStyleSheet(f"""
-            QLineEdit {{
+        # 3. KATEGORİ VE ÜRÜN EKLEME KONTROL BARI
+        control_bar = QFrame()
+        control_bar.setStyleSheet(f"""
+            QFrame {{
                 background-color: {AppStyles.BG_DARK};
-                color: {AppStyles.TEXT_PRIMARY};
                 border: 1px solid {AppStyles.BORDER};
-                border-radius: 6px;
-                padding: 2px 10px;
-                font-size: 9.5pt;
+                border-radius: 8px;
+                padding: 6px 12px;
             }}
         """)
-        self.search_edit.textChanged.connect(self.filter_table)
-        search_bar.addWidget(self.search_edit, 2)
+        cb_layout = QHBoxLayout(control_bar)
+        cb_layout.setContentsMargins(8, 4, 8, 4)
+        cb_layout.setSpacing(10)
 
-        self.cat_filter_combo = QComboBox()
-        self.cat_filter_combo.setFixedHeight(30)
-        self.cat_filter_combo.setStyleSheet(f"""
+        lbl_cat = QLabel("📂 Kategori:")
+        lbl_cat.setStyleSheet(f"font-weight: bold; color: {AppStyles.TEXT_PRIMARY}; font-size: 9.5pt;")
+        cb_layout.addWidget(lbl_cat)
+
+        self.scope_combo = QComboBox()
+        self.scope_combo.setFixedHeight(32)
+        self.scope_combo.setMinimumWidth(220)
+        self.scope_combo.setStyleSheet(f"""
             QComboBox {{
-                background-color: {AppStyles.BG_DARK};
-                color: {AppStyles.TEXT_PRIMARY};
-                border: 1px solid {AppStyles.BORDER};
-                border-radius: 6px;
-                padding: 2px 10px;
-                font-size: 9.5pt;
-            }}
-        """)
-        self.cat_filter_combo.addItems(["Tüm Kategoriler", "Tezgah Ürünleri", "Meşrubatlar", "Pasta Süsleri"])
-        self.cat_filter_combo.currentIndexChanged.connect(self.filter_table)
-        search_bar.addWidget(self.cat_filter_combo, 1)
-
-        self.btn_add_closing_item = QPushButton("➕ Yeni Ürün Ekle")
-        self.btn_add_closing_item.setCursor(Qt.PointingHandCursor)
-        self.btn_add_closing_item.setFixedHeight(30)
-        self.btn_add_closing_item.setStyleSheet(f"""
-            QPushButton {{
                 background-color: {AppStyles.BG_MEDIUM};
                 color: {AppStyles.TEXT_PRIMARY};
                 border: 1px solid {AppStyles.PRIMARY};
                 border-radius: 6px;
-                padding: 4px 14px;
-                font-weight: 500;
-                font-size: 9pt;
+                padding: 4px 10px;
+                font-weight: bold;
+                font-size: 9.5pt;
             }}
-            QPushButton:hover {{
-                background-color: {AppStyles.PRIMARY};
-                color: {AppStyles.TEXT_ON_PRIMARY};
+            QComboBox QAbstractItemView {{
+                background-color: {AppStyles.BG_DARK};
+                color: {AppStyles.TEXT_PRIMARY};
+                selection-background-color: {AppStyles.PRIMARY};
+                selection-color: white;
             }}
         """)
-        self.btn_add_closing_item.clicked.connect(self.on_add_closing_item)
-        search_bar.addWidget(self.btn_add_closing_item)
+        self.scope_combo.addItem("⭐ Tüm Kategoriler (Genel Sayım)")
+        try:
+            available_cats = stock_count_service.get_available_categories(self.branch_id)
+            for c in available_cats:
+                self.scope_combo.addItem(c)
+        except Exception:
+            for c in ["Tezgah Ürünleri", "Pastalar & Tatlılar", "Meşrubatlar", "Unlu Mamüller"]:
+                self.scope_combo.addItem(c)
+        self.scope_combo.addItem("+ Yeni Kategori Yaz...")
+        self.scope_combo.currentIndexChanged.connect(self.on_scope_changed)
+        cb_layout.addWidget(self.scope_combo)
 
-        search_bar.addStretch()
+        # ➕ Ürün Ekle Butonu
+        self.btn_add_closing_item = QPushButton("➕ Ürün Ekle")
+        self.btn_add_closing_item.setCursor(Qt.PointingHandCursor)
+        self.btn_add_closing_item.setFixedHeight(32)
+        self.btn_add_closing_item.setStyleSheet("""
+            QPushButton {
+                background-color: #059669;
+                color: white;
+                border: none;
+                border-radius: 6px;
+                padding: 4px 16px;
+                font-weight: bold;
+                font-size: 9.5pt;
+            }
+            QPushButton:hover {
+                background-color: #047857;
+            }
+        """)
+        self.btn_add_closing_item.setToolTip("Seçili kategoriye yeni ürün ekle")
+        self.btn_add_closing_item.clicked.connect(self.on_add_closing_item)
+        cb_layout.addWidget(self.btn_add_closing_item)
+
+        cb_layout.addSpacing(14)
+
+        # Tabloda Ara
+        self.search_edit = QLineEdit()
+        self.search_edit.setPlaceholderText("🔍 Bu sayımda ürün ara...")
+        self.search_edit.setFixedHeight(32)
+        self.search_edit.setMinimumWidth(180)
+        self.search_edit.setStyleSheet(f"""
+            QLineEdit {{
+                background-color: {AppStyles.BG_MEDIUM};
+                color: {AppStyles.TEXT_PRIMARY};
+                border: 1px solid {AppStyles.BORDER};
+                border-radius: 6px;
+                padding: 4px 10px;
+                font-size: 9.5pt;
+            }}
+            QLineEdit:focus {{
+                border-color: {AppStyles.PRIMARY};
+            }}
+        """)
+        self.search_edit.textChanged.connect(self.filter_table)
+        cb_layout.addWidget(self.search_edit)
+
+        cb_layout.addStretch()
 
         self.closing_tip_lbl = QLabel("💡 'Akşam Kalan' ve 'Günün Firesi' değerlerini giriniz.")
         self.closing_tip_lbl.setStyleSheet(f"color: {AppStyles.INFO}; font-size: 8.5pt;")
-        search_bar.addWidget(self.closing_tip_lbl)
+        cb_layout.addWidget(self.closing_tip_lbl)
 
-        layout.addLayout(search_bar)
+        layout.addWidget(control_bar)
 
         # 4. BİRLEŞİK GÜN SONU TABLOSU
-        self.table = QTableWidget()
+        self.table = SmoothScrollTableWidget()
         self.table.setColumnCount(len(self.HEADERS))
         self.table.setHorizontalHeaderLabels(self.HEADERS)
         self.table.setAlternatingRowColors(True)
         self.table.verticalHeader().setVisible(False)
+        self.table.verticalHeader().setDefaultSectionSize(44)
         self.table.setSelectionBehavior(QAbstractItemView.SelectRows)
 
         hdr = self.table.horizontalHeader()
@@ -916,9 +1024,10 @@ class DailyClosingStockCountDialog(QDialog):
         hdr.setSectionResizeMode(self.COL_REM_VAL, QHeaderView.ResizeToContents)
         hdr.setSectionResizeMode(self.COL_SOLD_VAL, QHeaderView.ResizeToContents)
         hdr.setSectionResizeMode(self.COL_ACTIONS, QHeaderView.Fixed)
-        self.table.setColumnWidth(self.COL_ACTIONS, 46)
+        self.table.setColumnWidth(self.COL_ACTIONS, 76)
 
         self.table.itemChanged.connect(self.on_table_item_changed)
+        self.table.cellDoubleClicked.connect(lambda row, col: self.on_closing_row_edit(row))
         layout.addWidget(self.table, 1)
 
         # 5. ALT BİLGİ VE BÜYÜK KAYDET BUTONU
@@ -1025,15 +1134,52 @@ class DailyClosingStockCountDialog(QDialog):
         new_d = cur + timedelta(days=1)
         self.date_picker.setDate(QDate(new_d.year, new_d.month, new_d.day))
 
+    def get_current_selected_category(self) -> Optional[str]:
+        """Seçili kategori filtresini temiz metin olarak döndürür"""
+        if not hasattr(self, 'scope_combo'):
+            return None
+        txt = self.scope_combo.currentText().strip()
+        if "Tüm Kategoriler" in txt or "Genel Sayım" in txt or "Yeni Kategori" in txt:
+            return None
+        cat = txt.replace("🥖", "").replace("🎂", "").replace("🥤", "").replace("🧁", "").replace("⭐", "").replace("📦", "").strip()
+        return cat if cat else None
+
+    def on_scope_changed(self, idx: int):
+        """Kullanıcı kategori kapsamını değiştirdiğinde veya yeni kategori seçtiğinde tetiklenir"""
+        txt = self.scope_combo.currentText().strip()
+        if "+ Yeni Kategori Yaz" in txt or "Yeni Kategori" in txt:
+            new_cat, ok = QInputDialog.getText(
+                self,
+                "Yeni Kategori Sayımı",
+                "Sayım yapılacak kategori adını girin (Örn: Çikolata, Dondurma, Şerbetli Tatlılar):"
+            )
+            if ok and new_cat.strip():
+                clean_name = new_cat.strip()
+                ins_idx = max(1, self.scope_combo.count() - 1)
+                self.scope_combo.insertItem(ins_idx, clean_name)
+                self.scope_combo.blockSignals(True)
+                self.scope_combo.setCurrentIndex(ins_idx)
+                self.scope_combo.blockSignals(False)
+                self.load_daily_session()
+            else:
+                self.scope_combo.blockSignals(True)
+                self.scope_combo.setCurrentIndex(0)
+                self.scope_combo.blockSignals(False)
+                self.load_daily_session()
+            return
+        self.load_daily_session()
+
     def load_daily_session(self):
-        """Seçili tarihe ait gün sonu oturumunu ve kalemlerini yükle"""
+        """Seçili tarihe ve kategori kapsamına ait gün sonu oturumunu ve kalemlerini yükle"""
         date_str = self.date_picker.date().toString("yyyy-MM-dd")
         u_id = getattr(self.user, 'id', None)
+        selected_cat = self.get_current_selected_category()
 
         ok, msg, sess, items = stock_count_service.get_or_create_daily_session(
             branch_id=self.branch_id,
             date_str=date_str,
-            user_id=u_id
+            user_id=u_id,
+            category=selected_cat
         )
 
         if not ok or not sess:
@@ -1056,6 +1202,7 @@ class DailyClosingStockCountDialog(QDialog):
         self.filter_table()
 
     def populate_table_row(self, row: int, itm: Dict):
+        self.table.setRowHeight(row, 44)
         item_id = itm.get('id')
 
         # 0. Kategori
@@ -1094,9 +1241,12 @@ class DailyClosingStockCountDialog(QDialog):
         op_item.setFlags(op_item.flags() & ~Qt.ItemIsEditable)
         self.table.setItem(row, self.COL_OPENING, op_item)
 
-        # 4. Gelen (Giren) (Düzenlenebilir)
+        # 4. Gelen (İmalat + Şube Pişirim) (✨ DÜZENLENEBİLİR)
         in_item = QTableWidgetItem(format_num(incoming))
         in_item.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        in_item.setBackground(QColor("#1e293b"))
+        in_item.setFont(QFont("Segoe UI", 9, QFont.Bold))
+        in_item.setForeground(QColor("#60a5fa"))
         self.table.setItem(row, self.COL_INCOMING, in_item)
 
         # 5. Toplam Mevcut
@@ -1160,24 +1310,57 @@ class DailyClosingStockCountDialog(QDialog):
         sv_item.setFont(QFont("Segoe UI", 9, QFont.Bold))
         self.table.setItem(row, self.COL_SOLD_VAL, sv_item)
 
-        # 13. İşlem Butonu (Sil)
+        # 13. İşlem Butonları (Düzenle ve Sil)
+        act_w = QWidget()
+        act_w.setStyleSheet("background: transparent;")
+        act_l = QHBoxLayout(act_w)
+        act_l.setContentsMargins(4, 2, 4, 2)
+        act_l.setSpacing(4)
+        act_l.setAlignment(Qt.AlignCenter)
+
+        edit_btn = QPushButton("✏️")
+        edit_btn.setCursor(Qt.PointingHandCursor)
+        edit_btn.setFixedSize(28, 28)
+        edit_btn.setStyleSheet(f"""
+            QPushButton {{
+                background: transparent;
+                color: {AppStyles.PRIMARY};
+                border: 1px solid rgba(217, 119, 6, 0.4);
+                border-radius: 4px;
+                font-size: 10pt;
+                padding: 0px;
+            }}
+            QPushButton:hover {{
+                background-color: rgba(217, 119, 6, 0.2);
+                border-color: {AppStyles.PRIMARY};
+            }}
+        """)
+        edit_btn.setToolTip("Ürünü Düzenle / Ek Ürün Miktarı Ekle")
+        edit_btn.clicked.connect(lambda _, r=row: self.on_closing_row_edit(r))
+        act_l.addWidget(edit_btn)
+
         del_btn = QPushButton("🗑️")
         del_btn.setCursor(Qt.PointingHandCursor)
-        del_btn.setFixedSize(28, 26)
+        del_btn.setFixedSize(28, 28)
         del_btn.setStyleSheet(f"""
             QPushButton {{
                 background: transparent;
                 color: {AppStyles.DANGER};
-                border: none;
+                border: 1px solid rgba(239, 68, 68, 0.25);
+                border-radius: 4px;
                 font-size: 10pt;
+                padding: 0px;
             }}
             QPushButton:hover {{
                 background-color: #ef444422;
-                border-radius: 4px;
+                border-color: {AppStyles.DANGER};
             }}
         """)
+        del_btn.setToolTip("Ürünü Kaldır")
         del_btn.clicked.connect(lambda _, r=row, iid=item_id: self.delete_closing_row(r, iid))
-        self.table.setCellWidget(row, self.COL_ACTIONS, del_btn)
+        act_l.addWidget(del_btn)
+
+        self.table.setCellWidget(row, self.COL_ACTIONS, act_w)
 
     def on_table_item_changed(self, item: QTableWidgetItem):
         """Canlı hücre düzenlemesinde otomatik hesaplamaları anında uygula"""
@@ -1272,8 +1455,6 @@ class DailyClosingStockCountDialog(QDialog):
 
     def filter_table(self):
         q = self.search_edit.text().strip().lower()
-        cat_filter = self.cat_filter_combo.currentText()
-
         for r in range(self.table.rowCount()):
             cat_item = self.table.item(r, self.COL_CAT)
             pname_item = self.table.item(r, self.COL_PNAME)
@@ -1282,9 +1463,7 @@ class DailyClosingStockCountDialog(QDialog):
             pname_str = pname_item.text().lower() if pname_item else ""
 
             match_query = (not q) or (q in cat_str) or (q in pname_str)
-            match_cat = (cat_filter == "Tüm Kategoriler") or (cat_filter.lower() in cat_str)
-
-            self.table.setRowHidden(r, not (match_query and match_cat))
+            self.table.setRowHidden(r, not match_query)
 
     def on_save_clicked(self):
         """Gün sonu sayımını veritabanına kaydeder ve dağıtır"""
@@ -1345,14 +1524,19 @@ class DailyClosingStockCountDialog(QDialog):
             QMessageBox.warning(self, "Hata", "Sayım oturumu bulunamadı.")
             return
 
+        current_cat = self.get_current_selected_category() or "Tezgah Ürünleri"
         existing_cats = set()
+        try:
+            existing_cats.update(stock_count_service.get_available_categories(self.branch_id))
+        except Exception:
+            pass
         for r in range(self.table.rowCount()):
             c_item = self.table.item(r, self.COL_CAT)
             if c_item and c_item.text().strip():
                 existing_cats.add(c_item.text().strip())
-        cats = sorted(list(existing_cats or ["Tezgah Ürünleri", "Meşrubatlar", "Pasta Süsleri"]))
+        cats = sorted(list(existing_cats or [current_cat]))
 
-        dlg = AddStockCountItemDialog(self, categories=cats)
+        dlg = AddStockCountItemDialog(self, categories=cats, item_data={'category': current_cat})
         if dlg.exec_() == QDialog.Accepted:
             data = dlg.get_data()
             sess_id = self.session_data['id']
@@ -1361,6 +1545,61 @@ class DailyClosingStockCountDialog(QDialog):
                 self.load_daily_session()
             else:
                 QMessageBox.warning(self, "Hata", msg)
+
+    def on_closing_row_edit(self, row: int):
+        """Satıra tıklandığında veya ✏️ butonuna basıldığında açılan popup ile satırı düzenler"""
+        if row < 0 or row >= self.table.rowCount():
+            return
+        c_item = self.table.item(row, self.COL_CAT)
+        item_id = c_item.data(Qt.UserRole) if c_item else None
+        cat = c_item.text().strip() if c_item else ""
+        pname = self.table.item(row, self.COL_PNAME).text().strip() if self.table.item(row, self.COL_PNAME) else ""
+        unit = self.table.item(row, self.COL_UNIT).text().strip() if self.table.item(row, self.COL_UNIT) else "Adet"
+        opening = parse_num(self.table.item(row, self.COL_OPENING).text() if self.table.item(row, self.COL_OPENING) else 0)
+        incoming = parse_num(self.table.item(row, self.COL_INCOMING).text() if self.table.item(row, self.COL_INCOMING) else 0)
+        physical = parse_num(self.table.item(row, self.COL_PHYSICAL).text() if self.table.item(row, self.COL_PHYSICAL) else 0)
+        waste = parse_num(self.table.item(row, self.COL_WASTE_QTY).text() if self.table.item(row, self.COL_WASTE_QTY) else 0)
+        cost = parse_num(self.table.item(row, self.COL_UNIT_COST).text() if self.table.item(row, self.COL_UNIT_COST) else 0)
+
+        row_data = {
+            'id': item_id,
+            'category': cat,
+            'product_name': pname,
+            'unit': unit,
+            'opening_stock': opening,
+            'incoming_stock': incoming,
+            'physical_count': physical,
+            'transfer_out_qty': 0.0,
+            'waste_qty': waste,
+            'unit_cost': cost
+        }
+
+        existing_cats = set()
+        for r in range(self.table.rowCount()):
+            ci = self.table.item(r, self.COL_CAT)
+            if ci and ci.text().strip():
+                existing_cats.add(ci.text().strip())
+        cats = sorted(list(existing_cats or ["Tezgah Ürünleri", "Meşrubatlar", "Pasta Süsleri"]))
+
+        dlg = AddStockCountItemDialog(self, categories=cats, item_data=row_data)
+        if dlg.exec_() == QDialog.Accepted:
+            new_data = dlg.get_data()
+            if item_id:
+                ok, msg = stock_count_service.update_item(item_id, new_data)
+                if ok:
+                    self.load_daily_session()
+                else:
+                    QMessageBox.warning(self, "Hata", msg)
+            else:
+                self.table.item(row, self.COL_CAT).setText(new_data.get('category', ''))
+                self.table.item(row, self.COL_PNAME).setText(new_data.get('product_name', ''))
+                self.table.item(row, self.COL_UNIT).setText(new_data.get('unit', 'Adet'))
+                self.table.item(row, self.COL_OPENING).setText(format_num(new_data.get('opening_stock', 0)))
+                self.table.item(row, self.COL_INCOMING).setText(format_num(new_data.get('incoming_stock', 0)))
+                self.table.item(row, self.COL_PHYSICAL).setText(format_num(new_data.get('physical_count', 0)))
+                self.table.item(row, self.COL_WASTE_QTY).setText(format_num(new_data.get('waste_qty', 0)))
+                self.table.item(row, self.COL_UNIT_COST).setText(format_num(new_data.get('unit_cost', 0)))
+                self.on_table_item_changed(self.table.item(row, self.COL_PHYSICAL))
 
     def delete_closing_row(self, row: int, item_id: Optional[int]):
         """Bir ürünü gün sonu tablosundan ve oturumundan siler"""
@@ -1380,6 +1619,15 @@ class DailyClosingStockCountDialog(QDialog):
                     return
             self.table.removeRow(row)
             self.recalculate_totals()
+
+    def wheelEvent(self, event):
+        """Pencerenin herhangi bir yerinde (kartlar, başlık vs.) fare tekerleği döndürüldüğünde tabloyu kaydırır"""
+        target = getattr(self, 'table', None)
+        if target:
+            target.wheelEvent(event)
+            event.accept()
+            return
+        super().wheelEvent(event)
 
 
 # ==================== DETAY PENCERESİ (POPUP) ====================
@@ -1439,8 +1687,13 @@ class StockCountDetailDialog(QDialog):
         self._has_unsaved_changes = False
 
         self.setWindowTitle("🔍 Stok Sayım ve Durum Detayı")
-        self.resize(1180, 760)
-        self.setMinimumWidth(1000)
+        screen = QApplication.primaryScreen()
+        avail = screen.availableGeometry() if screen else None
+        target_w = min(1180, avail.width() - 40) if avail else 1180
+        target_h = min(760, avail.height() - 50) if avail else 720
+        self.resize(target_w, target_h)
+        self.setMinimumWidth(min(980, target_w))
+        self.setMinimumHeight(min(520, target_h))
         self.setStyleSheet(f"""
             QDialog {{ background-color: {AppStyles.BG_MEDIUM}; color: {AppStyles.TEXT_PRIMARY}; }}
             QLabel {{ color: {AppStyles.TEXT_PRIMARY}; }}
@@ -1800,11 +2053,12 @@ class StockCountDetailDialog(QDialog):
         layout.addLayout(filter_bar)
 
         # Ana Sayım Tablosu (15 Sütun)
-        self.table = QTableWidget()
+        self.table = SmoothScrollTableWidget()
         self.table.setColumnCount(len(self.HEADERS))
         self.table.setHorizontalHeaderLabels(self.HEADERS)
         self.table.setAlternatingRowColors(True)
         self.table.verticalHeader().setVisible(False)
+        self.table.verticalHeader().setDefaultSectionSize(44)
         self.table.setSelectionBehavior(QAbstractItemView.SelectRows)
 
         header = self.table.horizontalHeader()
@@ -1823,9 +2077,10 @@ class StockCountDetailDialog(QDialog):
         header.setSectionResizeMode(self.COL_REM_VALUE, QHeaderView.ResizeToContents)
         header.setSectionResizeMode(self.COL_SOLD_VALUE, QHeaderView.ResizeToContents)
         header.setSectionResizeMode(self.COL_ACTIONS, QHeaderView.Fixed)
-        self.table.setColumnWidth(self.COL_ACTIONS, 46)
+        self.table.setColumnWidth(self.COL_ACTIONS, 76)
 
         self.table.itemChanged.connect(self.on_table_item_changed)
+        self.table.cellDoubleClicked.connect(lambda row, col: self.on_row_edit_click(row))
         layout.addWidget(self.table, 1)
 
     def setup_logs_tab(self, parent: QWidget):
@@ -1903,12 +2158,13 @@ class StockCountDetailDialog(QDialog):
         layout.addLayout(tool_bar)
 
         # Hareket Tablosu
-        self.mov_table = QTableWidget()
+        self.mov_table = SmoothScrollTableWidget()
         mov_headers = ["Tarih", "Kategori", "Ürün Adı", "İşlem Türü", "Miktar", "Birim", "Açıklama / Tedarikçi", "Sil"]
         self.mov_table.setColumnCount(len(mov_headers))
         self.mov_table.setHorizontalHeaderLabels(mov_headers)
         self.mov_table.setAlternatingRowColors(True)
         self.mov_table.verticalHeader().setVisible(False)
+        self.mov_table.verticalHeader().setDefaultSectionSize(44)
         self.mov_table.setSelectionBehavior(QAbstractItemView.SelectRows)
 
         m_header = self.mov_table.horizontalHeader()
@@ -2013,6 +2269,7 @@ class StockCountDetailDialog(QDialog):
 
     def populate_table_row(self, row: int, itm: Dict, is_readonly: bool = False):
         """Tek bir satırı oluşturur ve hesaplanmış sütunları doldurur"""
+        self.table.setRowHeight(row, 44)
         item_id = itm.get('id')
 
         # 0. Kategori
@@ -2134,25 +2391,58 @@ class StockCountDetailDialog(QDialog):
         sold_val_item.setFont(QFont("Segoe UI", 9, QFont.Bold))
         self.table.setItem(row, self.COL_SOLD_VALUE, sold_val_item)
 
-        # 14. İşlem Butonu (Sil)
+        # 14. İşlem Butonları (Düzenle ve Sil)
         if not is_readonly:
+            act_w = QWidget()
+            act_w.setStyleSheet("background: transparent;")
+            act_l = QHBoxLayout(act_w)
+            act_l.setContentsMargins(4, 2, 4, 2)
+            act_l.setSpacing(4)
+            act_l.setAlignment(Qt.AlignCenter)
+
+            edit_btn = QPushButton("✏️")
+            edit_btn.setCursor(Qt.PointingHandCursor)
+            edit_btn.setFixedSize(28, 28)
+            edit_btn.setStyleSheet(f"""
+                QPushButton {{
+                    background: transparent;
+                    color: {AppStyles.PRIMARY};
+                    border: 1px solid rgba(217, 119, 6, 0.4);
+                    border-radius: 4px;
+                    font-size: 10pt;
+                    padding: 0px;
+                }}
+                QPushButton:hover {{
+                    background-color: rgba(217, 119, 6, 0.2);
+                    border-color: {AppStyles.PRIMARY};
+                }}
+            """)
+            edit_btn.setToolTip("Kalemi Düzenle / Ek Ürün Miktarı Ekle")
+            edit_btn.clicked.connect(lambda _, r=row: self.on_row_edit_click(r))
+            act_l.addWidget(edit_btn)
+
             del_btn = QPushButton("🗑️")
             del_btn.setCursor(Qt.PointingHandCursor)
-            del_btn.setFixedSize(28, 26)
+            del_btn.setFixedSize(28, 28)
             del_btn.setStyleSheet(f"""
                 QPushButton {{
                     background: transparent;
                     color: {AppStyles.DANGER};
-                    border: none;
+                    border: 1px solid rgba(239, 68, 68, 0.25);
+                    border-radius: 4px;
                     font-size: 10pt;
+                    padding: 0px;
                 }}
                 QPushButton:hover {{
                     background-color: #ef444422;
-                    border-radius: 4px;
+                    border-color: {AppStyles.DANGER};
                 }}
             """)
+            del_btn.setToolTip("Kalemi Sil")
             del_btn.clicked.connect(lambda _, r=row, iid=item_id: self.delete_row_item(r, iid))
-            self.table.setCellWidget(row, self.COL_ACTIONS, del_btn)
+            act_l.addWidget(del_btn)
+
+            self.table.setCellWidget(row, self.COL_ACTIONS, act_w)
         else:
             self.table.setCellWidget(row, self.COL_ACTIONS, QWidget())
 
@@ -2358,6 +2648,59 @@ class StockCountDetailDialog(QDialog):
             self.table.removeRow(row)
             self.recalculate_totals()
 
+    def on_row_edit_click(self, row: int):
+        """Detay penceresinde satıra tıklandığında veya ✏️ butonuna basıldığında açılan düzenleme dialogu"""
+        if (self.session_data or {}).get('status') == 'Approved':
+            QMessageBox.information(self, "Kilitli", "Onaylanmış sayım dönemlerinde değişiklik yapılamaz.")
+            return
+        if row < 0 or row >= self.table.rowCount():
+            return
+
+        cat_item = self.table.item(row, self.COL_CATEGORY)
+        item_id = cat_item.data(Qt.UserRole) if cat_item else None
+        cat = cat_item.text().strip() if cat_item else ""
+        pname = self.table.item(row, self.COL_PRODUCT).text().strip() if self.table.item(row, self.COL_PRODUCT) else ""
+        unit = self.table.item(row, self.COL_UNIT).text().strip() if self.table.item(row, self.COL_UNIT) else "Adet"
+
+        opening = parse_num(self.table.item(row, self.COL_OPENING).text() if self.table.item(row, self.COL_OPENING) else 0)
+        incoming = parse_num(self.table.item(row, self.COL_INCOMING).text() if self.table.item(row, self.COL_INCOMING) else 0)
+        physical = parse_num(self.table.item(row, self.COL_PHYSICAL).text() if self.table.item(row, self.COL_PHYSICAL) else 0)
+        transfer_out = parse_num(self.table.item(row, self.COL_TRANSFER_OUT).text() if self.table.item(row, self.COL_TRANSFER_OUT) else 0)
+        waste = parse_num(self.table.item(row, self.COL_WASTE_QTY).text() if self.table.item(row, self.COL_WASTE_QTY) else 0)
+        cost = parse_num(self.table.item(row, self.COL_UNIT_COST).text() if self.table.item(row, self.COL_UNIT_COST) else 0)
+
+        row_data = {
+            'id': item_id,
+            'category': cat,
+            'product_name': pname,
+            'unit': unit,
+            'opening_stock': opening,
+            'incoming_stock': incoming,
+            'physical_count': physical,
+            'transfer_out_qty': transfer_out,
+            'waste_qty': waste,
+            'unit_cost': cost
+        }
+
+        existing_cats = set()
+        for r in range(self.table.rowCount()):
+            ci = self.table.item(r, self.COL_CATEGORY)
+            if ci and ci.text().strip():
+                existing_cats.add(ci.text().strip())
+        cats = sorted(list(existing_cats or ["Tezgah Ürünleri", "Meşrubatlar", "Pasta Süsleri"]))
+
+        dlg = AddStockCountItemDialog(self, categories=cats, item_data=row_data)
+        if dlg.exec_() == QDialog.Accepted:
+            new_data = dlg.get_data()
+            if item_id:
+                ok, msg = stock_count_service.update_item(item_id, new_data)
+                if ok:
+                    self.load_session_items()
+                else:
+                    QMessageBox.warning(self, "Hata", msg)
+            else:
+                self.load_session_items()
+
     def on_approve_session_click(self):
         """Dönemi onayla veya tekrar aç"""
         status = (self.session_data or {}).get('status', 'Draft')
@@ -2463,6 +2806,7 @@ class StockCountDetailDialog(QDialog):
             is_readonly = (self.session_data or {}).get('status') == 'Approved'
 
             for r, m in enumerate(filtered):
+                self.mov_table.setRowHeight(r, 44)
                 m_id = m.get('id')
 
                 t_item = QTableWidgetItem(str(m.get('date', '')))
@@ -2501,17 +2845,18 @@ class StockCountDetailDialog(QDialog):
                 if not is_readonly:
                     del_btn = QPushButton("🗑️")
                     del_btn.setCursor(Qt.PointingHandCursor)
-                    del_btn.setFixedSize(28, 26)
+                    del_btn.setFixedSize(30, 30)
                     del_btn.setStyleSheet(f"""
                         QPushButton {{
                             background: transparent;
                             color: {AppStyles.DANGER};
-                            border: none;
-                            font-size: 10pt;
+                            border: 1px solid rgba(239, 68, 68, 0.25);
+                            border-radius: 4px;
+                            font-size: 11pt;
                         }}
                         QPushButton:hover {{
                             background-color: #ef444422;
-                            border-radius: 4px;
+                            border-color: {AppStyles.DANGER};
                         }}
                     """)
                     del_btn.clicked.connect(lambda _, mid=m_id: self.delete_movement_click(mid))
@@ -2554,6 +2899,23 @@ class StockCountDetailDialog(QDialog):
                 self.load_session_items()
             else:
                 QMessageBox.warning(self, "Hata", msg)
+
+    def wheelEvent(self, event):
+        """Pencerenin herhangi bir yerinde (kartlar, başlık vs.) fare tekerleği döndürüldüğünde aktif tabloyu kaydırır"""
+        target = None
+        if hasattr(self, 'inner_tabs') and self.inner_tabs:
+            if self.inner_tabs.currentIndex() == 1 and hasattr(self, 'mov_table'):
+                target = self.mov_table
+            elif hasattr(self, 'table'):
+                target = self.table
+        elif hasattr(self, 'table'):
+            target = self.table
+
+        if target:
+            target.wheelEvent(event)
+            event.accept()
+            return
+        super().wheelEvent(event)
 
 
 # ==================== ANA SAYFA SINIFI ====================
@@ -2622,7 +2984,7 @@ class StockCountPage(QWidget):
         self.setup_stock_tab(self.tab_stock)
         self.tabs.addTab(self.tab_stock, "📦 Stok Durumu ve Takibi")
 
-        # 2. SEKME: Fire ve Zayiat Analizi (Günlük / Haftalık / Aylık)
+        # 3. SEKME: Fire ve Zayiat Analizi (Günlük / Haftalık / Aylık)
         self.tab_waste = QWidget()
         self.setup_waste_tab(self.tab_waste)
         self.tabs.addTab(self.tab_waste, "🔥 Fire ve Zayiat Analizi")
@@ -2658,17 +3020,17 @@ class StockCountPage(QWidget):
 
         layout.addStretch()
 
-        # 🌙 Gün Sonu Sayımı Yap Butonu (Vurgulu ve Önemli)
-        btn_daily_closing = QPushButton("🌙 Gün Sonu Sayımı Yap")
-        btn_daily_closing.setCursor(Qt.PointingHandCursor)
-        btn_daily_closing.setFixedHeight(34)
-        btn_daily_closing.setStyleSheet("""
+        # ➕ Yeni Sayım Butonu (Vurgulu ve Önemli)
+        btn_new_count = QPushButton("➕ Yeni Sayım")
+        btn_new_count.setCursor(Qt.PointingHandCursor)
+        btn_new_count.setFixedHeight(34)
+        btn_new_count.setStyleSheet("""
             QPushButton {
                 background-color: #059669;
                 color: white;
                 border: none;
                 border-radius: 6px;
-                padding: 6px 18px;
+                padding: 6px 22px;
                 font-weight: bold;
                 font-size: 10pt;
             }
@@ -2676,30 +3038,9 @@ class StockCountPage(QWidget):
                 background-color: #047857;
             }
         """)
-        btn_daily_closing.setToolTip("Akşam vitrin stoğunu ve günün firelerini aynı satırda kolayca sayıp kaydedin.")
-        btn_daily_closing.clicked.connect(self.on_open_daily_closing)
-        layout.addWidget(btn_daily_closing)
-
-        # Yeni Sayım Dönemi Başlat Butonu
-        btn_new = QPushButton("➕ Yeni Dönem Başlat")
-        btn_new.setCursor(Qt.PointingHandCursor)
-        btn_new.setFixedHeight(34)
-        btn_new.setStyleSheet(f"""
-            QPushButton {{
-                background-color: {AppStyles.PRIMARY};
-                color: {AppStyles.TEXT_ON_PRIMARY};
-                border: none;
-                border-radius: 6px;
-                padding: 6px 16px;
-                font-weight: bold;
-                font-size: 9.5pt;
-            }}
-            QPushButton:hover {{
-                background-color: {AppStyles.PRIMARY_HOVER};
-            }}
-        """)
-        btn_new.clicked.connect(self.on_new_session_click)
-        layout.addWidget(btn_new)
+        btn_new_count.setToolTip("Yeni günlük stok sayımı sayfası açar.")
+        btn_new_count.clicked.connect(self.on_open_daily_closing)
+        layout.addWidget(btn_new_count)
 
         return bar
 
@@ -2720,7 +3061,7 @@ class StockCountPage(QWidget):
         layout.addWidget(kpi_row)
 
         # 3. Sayım Dönemleri Özet Tablosu
-        self.stock_table = QTableWidget()
+        self.stock_table = SmoothScrollTableWidget()
         stock_headers = [
             "Tarih / Dönem",
             "Durum",
@@ -2736,6 +3077,7 @@ class StockCountPage(QWidget):
         self.stock_table.setHorizontalHeaderLabels(stock_headers)
         self.stock_table.setAlternatingRowColors(True)
         self.stock_table.verticalHeader().setVisible(False)
+        self.stock_table.verticalHeader().setDefaultSectionSize(54)
         self.stock_table.setSelectionBehavior(QAbstractItemView.SelectRows)
         self.stock_table.setStyleSheet(f"""
             QTableWidget {{
@@ -2756,7 +3098,7 @@ class StockCountPage(QWidget):
                 font-size: 9pt;
             }}
             QTableWidget::item {{
-                padding: 6px 8px;
+                padding: 4px 8px;
             }}
         """)
 
@@ -2770,7 +3112,7 @@ class StockCountPage(QWidget):
         s_hdr.setSectionResizeMode(6, QHeaderView.ResizeToContents)
         s_hdr.setSectionResizeMode(7, QHeaderView.ResizeToContents)
         s_hdr.setSectionResizeMode(8, QHeaderView.Fixed)
-        self.stock_table.setColumnWidth(8, 120)
+        self.stock_table.setColumnWidth(8, 175)
 
         self.stock_table.cellDoubleClicked.connect(lambda row, col: self.on_stock_row_double_click(row))
         layout.addWidget(self.stock_table, 1)
@@ -3018,6 +3360,7 @@ class StockCountPage(QWidget):
         self.stock_table.setRowCount(len(sessions))
 
         for r, s in enumerate(sessions):
+            self.stock_table.setRowHeight(r, 54)
             s_id = s.get('id')
             p_name = s.get('period_name', '')
             c_at = str(s.get('created_at', ''))[:10]
@@ -3083,24 +3426,27 @@ class StockCountPage(QWidget):
             it_waste.setTextAlignment(Qt.AlignCenter)
             self.stock_table.setItem(r, 7, it_waste)
 
-            # 8. İşlemler (Detay Butonu)
+            # 8. İşlemler (Detay ve Sil Butonları)
             action_widget = QWidget()
+            action_widget.setStyleSheet("background: transparent;")
             action_layout = QHBoxLayout(action_widget)
             action_layout.setContentsMargins(4, 2, 4, 2)
             action_layout.setSpacing(6)
+            action_layout.setAlignment(Qt.AlignCenter)
 
             btn_detail = QPushButton("🔍 Detay")
             btn_detail.setCursor(Qt.PointingHandCursor)
-            btn_detail.setFixedHeight(26)
+            btn_detail.setFixedHeight(32)
+            btn_detail.setMinimumWidth(82)
             btn_detail.setStyleSheet(f"""
                 QPushButton {{
                     background-color: {AppStyles.PRIMARY};
                     color: {AppStyles.TEXT_ON_PRIMARY};
                     border: none;
-                    border-radius: 4px;
-                    padding: 2px 10px;
+                    border-radius: 6px;
+                    padding: 4px 10px;
                     font-weight: bold;
-                    font-size: 8.5pt;
+                    font-size: 9pt;
                 }}
                 QPushButton:hover {{
                     background-color: {AppStyles.PRIMARY_HOVER};
@@ -3111,8 +3457,21 @@ class StockCountPage(QWidget):
 
             btn_del = QPushButton("🗑️")
             btn_del.setCursor(Qt.PointingHandCursor)
-            btn_del.setFixedSize(26, 26)
-            btn_del.setStyleSheet(f"background: transparent; color: {AppStyles.DANGER}; border: none;")
+            btn_del.setFixedSize(32, 32)
+            btn_del.setStyleSheet(f"""
+                QPushButton {{
+                    background: transparent;
+                    color: {AppStyles.DANGER};
+                    border: 1px solid rgba(239, 68, 68, 0.35);
+                    border-radius: 6px;
+                    font-size: 11pt;
+                    padding: 0px;
+                }}
+                QPushButton:hover {{
+                    background-color: #ef444422;
+                    border-color: {AppStyles.DANGER};
+                }}
+            """)
             btn_del.setToolTip("Sayım Dönemini Sil")
             btn_del.clicked.connect(lambda _, sid=s_id, pn=p_name: self.delete_session_row(sid, pn))
             action_layout.addWidget(btn_del)
@@ -3204,7 +3563,7 @@ class StockCountPage(QWidget):
         body_layout.setSpacing(14)
 
         # Sol: Zayiat Tablosu
-        self.waste_table = QTableWidget()
+        self.waste_table = SmoothScrollTableWidget()
         waste_headers = [
             "Tarih", "Kategori", "Ürün Adı", "Miktar", "Birim",
             "Birim Maliyet (TL)", "Fire Tutarı (TL)", "Zayiat Nedeni / Açıklama", "Sil"
@@ -3213,6 +3572,7 @@ class StockCountPage(QWidget):
         self.waste_table.setHorizontalHeaderLabels(waste_headers)
         self.waste_table.setAlternatingRowColors(True)
         self.waste_table.verticalHeader().setVisible(False)
+        self.waste_table.verticalHeader().setDefaultSectionSize(44)
         self.waste_table.setSelectionBehavior(QAbstractItemView.SelectRows)
         self.waste_table.setStyleSheet(f"""
             QTableWidget {{
@@ -3530,6 +3890,7 @@ class StockCountPage(QWidget):
         self.waste_table.setRowCount(len(records))
 
         for r, rec in enumerate(records):
+            self.waste_table.setRowHeight(r, 44)
             r_id = rec.get('id')
             d_str = str(rec.get('date', ''))
             cat = str(rec.get('category', ''))
@@ -3572,8 +3933,20 @@ class StockCountPage(QWidget):
 
             del_btn = QPushButton("🗑️")
             del_btn.setCursor(Qt.PointingHandCursor)
-            del_btn.setFixedSize(28, 26)
-            del_btn.setStyleSheet(f"background: transparent; color: {AppStyles.DANGER}; border: none;")
+            del_btn.setFixedSize(30, 30)
+            del_btn.setStyleSheet(f"""
+                QPushButton {{
+                    background: transparent;
+                    color: {AppStyles.DANGER};
+                    border: 1px solid rgba(239, 68, 68, 0.25);
+                    border-radius: 4px;
+                    font-size: 11pt;
+                }}
+                QPushButton:hover {{
+                    background-color: #ef444422;
+                    border-color: {AppStyles.DANGER};
+                }}
+            """)
             del_btn.clicked.connect(lambda _, mid=r_id: self.delete_waste_row(mid))
             self.waste_table.setCellWidget(r, 8, del_btn)
 

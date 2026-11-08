@@ -376,6 +376,20 @@ class ProductionService:
                         ))
 
             logger.info(f"🚚 Şubeye çoklu sevkiyat yapıldı: {len(valid_items)} kalem -> Şube #{target_branch_id} (No: {ship_no})")
+
+            # Hedef şubenin gün sonu sayım oturumu varsa imalat sevkiyatlarını anında senkronize et
+            try:
+                from .stock_count_service import stock_count_service
+                daily_sess = db.fetch_one("""
+                    SELECT id FROM StockCountSessions
+                    WHERE branch_id = %s AND (created_at::date = %s OR period_name LIKE %s)
+                    ORDER BY id DESC LIMIT 1
+                """, (target_branch_id, ship_date, f"%{ship_date}%"))
+                if daily_sess:
+                    stock_count_service.sync_daily_production_shipments(target_branch_id, daily_sess['id'], ship_date)
+            except Exception as e_sc:
+                logger.warning(f"Sevkiyat sayım senkronizasyonu uyarısı: {e_sc}")
+
             return True, f"Sevkiyat başarıyla kaydedildi (Sevk No: {ship_no})", new_id
         except Exception as e:
             logger.error(f"add_multi_shipment hatası: {e}")

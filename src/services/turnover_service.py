@@ -305,8 +305,8 @@ class TurnoverService:
 
     def get_cumulative_turnover(self, branch_id: int, up_to_date: str) -> Dict:
         """
-        O güne kadar olan kümülatif toplam ciroyu hesaplar (sadece kasa / ciro).
-        Faturalar cirodan tamamen ayrılmıştır.
+        O güne kadar olan kümülatif toplam ciroyu ve fireyi hesaplar (sadece kasa / ciro).
+        Net Kümülatif = Toplam Gelir - Toplam Gider - Toplam Fire
         """
         try:
             b_cond_dt, b_params_dt = self._build_branch_filter(branch_id)
@@ -314,24 +314,47 @@ class TurnoverService:
             dt_row = db.fetch_one(f"""
                 SELECT 
                     COALESCE(SUM(CASE WHEN entry_type = 'Income' THEN amount ELSE 0 END), 0) as cumulative_income,
-                    COALESCE(SUM(CASE WHEN entry_type = 'Expense' THEN amount ELSE 0 END), 0) as cumulative_expense
+                    COALESCE(SUM(CASE WHEN entry_type = 'Expense' AND category != 'Fire / Zayiat Kaybı' THEN amount ELSE 0 END), 0) as cumulative_expense,
+                    COALESCE(SUM(CASE WHEN entry_type = 'Expense' AND category = 'Fire / Zayiat Kaybı' THEN amount ELSE 0 END), 0) as cumulative_waste_dt
                 FROM DailyTurnovers
                 WHERE {b_cond_dt} AND entry_date <= %s
             """, tuple(b_params_dt + [up_to_date]))
 
             cum_inc = float(dt_row['cumulative_income']) if dt_row else 0.0
             cum_exp = float(dt_row['cumulative_expense']) if dt_row else 0.0
+            cum_waste_dt = float(dt_row['cumulative_waste_dt']) if dt_row else 0.0
+
+            # StockCountItems tablosundaki zayiatları da tara (eğer DailyTurnovers'a işlenmemişse kaçırmamak için)
+            total_waste = cum_waste_dt
+            try:
+                sci_cond = "s.branch_id = %s" if branch_id > 0 else "1=1"
+                sci_params = [branch_id, up_to_date] if branch_id > 0 else [up_to_date]
+                sci_row = db.fetch_one(f"""
+                    SELECT COALESCE(SUM(i.waste_value), 0) as total_sci_waste
+                    FROM StockCountItems i
+                    JOIN StockCountSessions s ON s.id = i.session_id
+                    WHERE {sci_cond} AND s.created_at::date <= %s
+                """, tuple(sci_params))
+                sci_waste = float(sci_row['total_sci_waste']) if sci_row else 0.0
+                if sci_waste > total_waste:
+                    total_waste = sci_waste
+            except Exception as we:
+                logger.debug(f"get_cumulative_turnover stock waste check: {we}")
+
+            cum_net = cum_inc - cum_exp - total_waste
 
             return {
                 'cumulative_income': cum_inc,
                 'cumulative_expense': cum_exp,
-                'cumulative_net': cum_inc - cum_exp
+                'cumulative_waste': total_waste,
+                'cumulative_net': cum_net
             }
         except Exception as e:
             logger.error(f"get_cumulative_turnover hatası: {e}")
             return {
                 'cumulative_income': 0.0,
                 'cumulative_expense': 0.0,
+                'cumulative_waste': 0.0,
                 'cumulative_net': 0.0
             }
 
@@ -339,8 +362,9 @@ class TurnoverService:
 
     def get_three_branches_summary(self, target_date: Optional[str] = None) -> Dict:
         """
-        Tüm aktif şubelerin (Armada, Çobançeşme, Rumeli) hem günlük hem de
-        o güne kadarki toplam kümülatif cirolarını ve 3 şubenin konsolide genel toplamını döndürür.
+        Tüm aktif şubelerin (Armada, Çobançeşme, Rumeli, İmalathane vb.) hem günlük hem de
+        o güne kadarki toplam kümülatif cirolarını, fire kayıplarını ve konsolide net kümülatifi döndürür.
+        Net Kümülatif = Toplam Gelir - Toplam Gider - Toplam Fire
         """
         if not target_date:
             target_date = datetime.now().date().strftime('%Y-%m-%d')
@@ -359,6 +383,7 @@ class TurnoverService:
             grand_daily_expense = 0.0
             grand_cumulative_income = 0.0
             grand_cumulative_expense = 0.0
+            grand_cumulative_waste = 0.0
 
             for b in branches:
                 bid = b['id']
@@ -378,6 +403,7 @@ class TurnoverService:
                     'daily_net': daily['net_turnover'],
                     'cumulative_income': cum['cumulative_income'],
                     'cumulative_expense': cum['cumulative_expense'],
+                    'cumulative_waste': cum.get('cumulative_waste', 0.0),
                     'cumulative_net': cum['cumulative_net'],
                     'entry_count': daily['entry_count']
                 }
@@ -388,6 +414,9 @@ class TurnoverService:
                 grand_daily_expense += daily['total_expense']
                 grand_cumulative_income += cum['cumulative_income']
                 grand_cumulative_expense += cum['cumulative_expense']
+                grand_cumulative_waste += cum.get('cumulative_waste', 0.0)
+
+            grand_cumulative_net = grand_cumulative_income - grand_cumulative_expense - grand_cumulative_waste
 
             return {
                 'date': target_date,
@@ -397,7 +426,8 @@ class TurnoverService:
                 'total_daily_net': grand_daily_income - grand_daily_expense,
                 'grand_cumulative_income': grand_cumulative_income,
                 'grand_cumulative_expense': grand_cumulative_expense,
-                'grand_cumulative_net': grand_cumulative_income - grand_cumulative_expense,
+                'grand_cumulative_waste': grand_cumulative_waste,
+                'grand_cumulative_net': grand_cumulative_net,
             }
         except Exception as e:
             logger.error(f"get_three_branches_summary hatası: {e}")
@@ -409,6 +439,7 @@ class TurnoverService:
                 'total_daily_net': 0.0,
                 'grand_cumulative_income': 0.0,
                 'grand_cumulative_expense': 0.0,
+                'grand_cumulative_waste': 0.0,
                 'grand_cumulative_net': 0.0,
             }
 
@@ -425,6 +456,83 @@ class TurnoverService:
             next_m = datetime(year, month + 1, 1)
         end_date = (next_m - timedelta(days=1)).strftime('%Y-%m-%d')
         return self.get_range_summary(branch_id, start_date, end_date)
+
+    def get_yearly_summary(self, branch_id: int, year: int) -> Dict:
+        """Belirtilen yılın özetini döndürür"""
+        start_date = f"{year:04d}-01-01"
+        end_date = f"{year:04d}-12-31"
+        return self.get_range_summary(branch_id, start_date, end_date)
+
+    def get_branch_financial_overview(self, branch_id: int, start_date: str, end_date: str) -> Dict:
+        """
+        Belirtilen şubenin verilen tarih aralığındaki tüm gelirlerini, faaliyet giderlerini,
+        fire zararlarını ve net kazancını (Gelir - Gider - Fire) detaylı hesaplar.
+        """
+        try:
+            b_cond_dt, b_params_dt = self._build_branch_filter(branch_id)
+
+            sql = f"""
+                SELECT 
+                    COALESCE(SUM(CASE WHEN entry_type = 'Income' THEN amount ELSE 0 END), 0) as income,
+                    COALESCE(SUM(CASE WHEN entry_type = 'Income' AND payment_method = 'Nakit' THEN amount ELSE 0 END), 0) as cash_income,
+                    COALESCE(SUM(CASE WHEN entry_type = 'Income' AND payment_method != 'Nakit' THEN amount ELSE 0 END), 0) as card_income,
+                    COALESCE(SUM(CASE WHEN entry_type = 'Expense' AND category != 'Fire / Zayiat Kaybı' THEN amount ELSE 0 END), 0) as expense,
+                    COALESCE(SUM(CASE WHEN entry_type = 'Expense' AND category = 'Fire / Zayiat Kaybı' THEN amount ELSE 0 END), 0) as dt_waste,
+                    COUNT(*) as entry_count
+                FROM DailyTurnovers
+                WHERE {b_cond_dt} AND entry_date BETWEEN %s AND %s
+            """
+            params = tuple(b_params_dt + [start_date, end_date])
+            dt = db.fetch_one(sql, params)
+
+            income = float(dt['income']) if dt else 0.0
+            cash = float(dt['cash_income']) if dt else 0.0
+            card = float(dt['card_income']) if dt else 0.0
+            expense = float(dt['expense']) if dt else 0.0
+            dt_waste = float(dt['dt_waste']) if dt else 0.0
+
+            # StockCountItems tablosundaki zayiatları da dahil et
+            sci_cond = "s.branch_id = %s" if branch_id > 0 else "1=1"
+            sci_params = [branch_id, start_date, end_date] if branch_id > 0 else [start_date, end_date]
+            sci = db.fetch_one(f"""
+                SELECT COALESCE(SUM(i.waste_value), 0) as waste_val, COALESCE(SUM(i.waste_qty), 0) as waste_qty
+                FROM StockCountItems i
+                JOIN StockCountSessions s ON s.id = i.session_id
+                WHERE {sci_cond} AND s.created_at::date BETWEEN %s AND %s
+            """, tuple(sci_params))
+            sci_waste = float(sci['waste_val']) if sci else 0.0
+            sci_qty = float(sci['waste_qty']) if sci else 0.0
+
+            total_waste = max(dt_waste, sci_waste)
+            net_profit = income - expense - total_waste
+            margin = (net_profit / income * 100.0) if income > 0 else 0.0
+
+            return {
+                'income': income,
+                'cash_income': cash,
+                'card_income': card,
+                'expense': expense,
+                'waste': total_waste,
+                'waste_qty': sci_qty,
+                'total_expense': expense + total_waste,
+                'net_profit': net_profit,
+                'profit_margin': margin,
+                'entry_count': int(dt['entry_count']) if dt else 0
+            }
+        except Exception as e:
+            logger.error(f"get_branch_financial_overview hatası: {e}")
+            return {
+                'income': 0.0,
+                'cash_income': 0.0,
+                'card_income': 0.0,
+                'expense': 0.0,
+                'waste': 0.0,
+                'waste_qty': 0.0,
+                'total_expense': 0.0,
+                'net_profit': 0.0,
+                'profit_margin': 0.0,
+                'entry_count': 0
+            }
 
     def get_range_summary(self, branch_id: int, start_date: str, end_date: str) -> Dict:
         """

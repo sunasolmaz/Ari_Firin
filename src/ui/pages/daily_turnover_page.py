@@ -510,11 +510,12 @@ class DailyTurnoverPage(QWidget):
 
         self.monthly_kpi = {}
         cards = [
-            ("income",     "🟢", "Aylık Gelir",     AppStyles.GREEN),
-            ("expense",    "🔴", "Aylık Gider",     AppStyles.RED),
-            ("net",        "⚖️", "Aylık Net",       AppStyles.CYAN),
-            ("avg_daily",  "📊", "Günlük Ortalama", AppStyles.PRIMARY),
-            ("best_day",   "🏆", "En İyi Gün",      AppStyles.PURPLE),
+            ("income",     "🟢", "Aylık Gelir",       AppStyles.GREEN),
+            ("expense",    "🔴", "Aylık Gider",       AppStyles.RED),
+            ("waste",      "🔥", "Aylık Toplam Fire", AppStyles.DANGER),
+            ("net",        "⚖️", "Aylık Net",         AppStyles.CYAN),
+            ("avg_daily",  "📊", "Günlük Ortalama",   AppStyles.PRIMARY),
+            ("best_day",   "🏆", "En İyi Gün",        AppStyles.PURPLE),
         ]
         for key, icon, title, color in cards:
             card = self._create_kpi_card(f"monthly_{key}", icon, title, color)
@@ -617,11 +618,12 @@ class DailyTurnoverPage(QWidget):
 
         self.yearly_kpi = {}
         cards = [
-            ("income",     "🟢", "Yıllık Gelir",     AppStyles.GREEN),
-            ("expense",    "🔴", "Yıllık Gider",     AppStyles.RED),
-            ("net",        "⚖️", "Yıllık Net",       AppStyles.CYAN),
-            ("avg_monthly","📊", "Aylık Ortalama",   AppStyles.PRIMARY),
-            ("best_month", "🏆", "En İyi Ay",        AppStyles.PURPLE),
+            ("income",     "🟢", "Yıllık Gelir",       AppStyles.GREEN),
+            ("expense",    "🔴", "Yıllık Gider",       AppStyles.RED),
+            ("waste",      "🔥", "Yıllık Toplam Fire", AppStyles.DANGER),
+            ("net",        "⚖️", "Yıllık Net",         AppStyles.CYAN),
+            ("avg_monthly","📊", "Aylık Ortalama",     AppStyles.PRIMARY),
+            ("best_month", "🏆", "En İyi Ay",          AppStyles.PURPLE),
         ]
         for key, icon, title, color in cards:
             card = self._create_kpi_card(f"yearly_{key}", icon, title, color)
@@ -648,25 +650,26 @@ class DailyTurnoverPage(QWidget):
         """)
 
         layout = QHBoxLayout(card)
-        layout.setContentsMargins(14, 10, 14, 10)
-        layout.setSpacing(10)
+        layout.setContentsMargins(10, 8, 10, 8)
+        layout.setSpacing(8)
 
         icon_lbl = QLabel(icon)
-        icon_lbl.setFixedSize(36, 36)
+        icon_lbl.setFixedSize(32, 32)
         icon_lbl.setAlignment(Qt.AlignCenter)
-        icon_lbl.setStyleSheet(f"background-color: {color}20; border-radius: 18px; font-size: 14pt;")
+        icon_lbl.setStyleSheet(f"background-color: {color}20; border-radius: 16px; font-size: 13pt;")
         layout.addWidget(icon_lbl)
 
         text_box = QVBoxLayout()
-        text_box.setSpacing(2)
+        text_box.setSpacing(1)
 
         title_lbl = QLabel(title)
-        title_lbl.setStyleSheet(f"font-size: 8.5pt; color: {AppStyles.TEXT_SECONDARY}; font-weight: 600;")
+        title_lbl.setStyleSheet(f"font-size: 8pt; color: {AppStyles.TEXT_SECONDARY}; font-weight: 600;")
+        title_lbl.setWordWrap(True)
         text_box.addWidget(title_lbl)
 
         value_lbl = QLabel("0,00 ₺")
         value_lbl.setObjectName(f"kpi_value_{key}")
-        value_lbl.setStyleSheet(f"font-size: 14pt; font-weight: bold; color: {color};")
+        value_lbl.setStyleSheet(f"font-size: 12.5pt; font-weight: bold; color: {color};")
         text_box.addWidget(value_lbl)
 
         layout.addLayout(text_box)
@@ -1024,7 +1027,36 @@ class DailyTurnoverPage(QWidget):
         monthly = turnover_service.get_range_summary(self.branch_id, month_start, month_end)
         total_income = monthly.get('total_income', 0)
         total_expense = monthly.get('total_expense', 0)
-        net = total_income - total_expense
+
+        # Aylık Toplam Fire Zararı (StockCount + DailyTurnovers)
+        monthly_waste = 0.0
+        dt_waste = 0.0
+        try:
+            from ...services.stock_count_service import stock_count_service
+            w_analytics = stock_count_service.get_waste_analytics(self.branch_id, mode="monthly", target_date_str=month_start)
+            monthly_waste = float(w_analytics.get('total_waste_value', 0.0))
+        except Exception as we:
+            logger.debug(f"Aylık fire analizi hatası: {we}")
+
+        try:
+            b_cond, b_params = turnover_service._build_branch_filter(self.branch_id)
+            dt_waste_row = db.fetch_one(f"""
+                SELECT COALESCE(SUM(amount), 0) as dt_waste
+                FROM DailyTurnovers
+                WHERE {b_cond}
+                  AND entry_type = 'Expense'
+                  AND category = 'Fire / Zayiat Kaybı'
+                  AND entry_date BETWEEN %s AND %s
+            """, tuple(b_params + [month_start, month_end]))
+            dt_waste = float(dt_waste_row['dt_waste']) if dt_waste_row else 0.0
+            if dt_waste > monthly_waste:
+                monthly_waste = dt_waste
+        except Exception as dte:
+            logger.debug(f"Aylık DT fire kontrol hatası: {dte}")
+
+        # Net = Gelir - (Gider + Mükerrer Olmayan Fire)
+        extra_waste = max(0.0, monthly_waste - dt_waste)
+        net = total_income - total_expense - extra_waste
 
         # Günlük ortalama
         days_in_month = (next_month - datetime(year, month, 1)).days
@@ -1043,6 +1075,9 @@ class DailyTurnoverPage(QWidget):
                             f"{total_income:,.2f} ₺")
         self._update_kpi_value(self.monthly_kpi["expense"], "monthly_expense",
                             f"{total_expense:,.2f} ₺")
+        if "waste" in self.monthly_kpi:
+            self._update_kpi_value(self.monthly_kpi["waste"], "monthly_waste",
+                                f"{monthly_waste:,.2f} ₺", AppStyles.DANGER)
         net_color = AppStyles.CYAN if net >= 0 else AppStyles.RED
         self._update_kpi_value(self.monthly_kpi["net"], "monthly_net",
                             f"{net:,.2f} ₺", net_color)
@@ -1051,11 +1086,12 @@ class DailyTurnoverPage(QWidget):
         self._update_kpi_value(self.monthly_kpi["best_day"], "monthly_best_day",
                             f"{best_day:,.2f} ₺")
 
-        # Kategori dağılımı
+        # Kategori dağılımı (Fire tek satırda gösterilir)
         cat_data = turnover_service.get_category_summary(self.branch_id, month_start, month_end)
         self.populate_category_table(
             self.monthly_cat_table.findChild(QTableWidget, "monthly_cat_table"),
-            cat_data
+            cat_data,
+            waste_amount=monthly_waste
         )
 
         # Günlük dağılım
@@ -1088,7 +1124,35 @@ class DailyTurnoverPage(QWidget):
         yearly = turnover_service.get_range_summary(self.branch_id, year_start, year_end)
         total_income = yearly.get('total_income', 0)
         total_expense = yearly.get('total_expense', 0)
-        net = total_income - total_expense
+
+        # Yıllık Fire Tutarı
+        yearly_waste = 0.0
+        dt_waste = 0.0
+        try:
+            from ...services.stock_count_service import stock_count_service
+            w_analytics = stock_count_service.get_waste_analytics(self.branch_id, mode="yearly", target_date_str=year_start)
+            yearly_waste = float(w_analytics.get('total_waste_value', 0.0))
+        except Exception as we:
+            logger.debug(f"Yıllık fire analizi hatası: {we}")
+
+        try:
+            b_cond, b_params = turnover_service._build_branch_filter(self.branch_id)
+            dt_waste_row = db.fetch_one(f"""
+                SELECT COALESCE(SUM(amount), 0) as dt_waste
+                FROM DailyTurnovers
+                WHERE {b_cond}
+                  AND entry_type = 'Expense'
+                  AND category = 'Fire / Zayiat Kaybı'
+                  AND entry_date BETWEEN %s AND %s
+            """, tuple(b_params + [year_start, year_end]))
+            dt_waste = float(dt_waste_row['dt_waste']) if dt_waste_row else 0.0
+            if dt_waste > yearly_waste:
+                yearly_waste = dt_waste
+        except Exception as dte:
+            logger.debug(f"Yıllık DT fire kontrol hatası: {dte}")
+
+        extra_waste = max(0.0, yearly_waste - dt_waste)
+        net = total_income - total_expense - extra_waste
 
         avg_monthly = total_income / 12 if total_income > 0 else 0
 
@@ -1111,6 +1175,9 @@ class DailyTurnoverPage(QWidget):
                             f"{total_income:,.2f} ₺")
         self._update_kpi_value(self.yearly_kpi["expense"], "yearly_expense",
                             f"{total_expense:,.2f} ₺")
+        if "waste" in self.yearly_kpi:
+            self._update_kpi_value(self.yearly_kpi["waste"], "yearly_waste",
+                                f"{yearly_waste:,.2f} ₺", AppStyles.DANGER)
         net_color = AppStyles.CYAN if net >= 0 else AppStyles.RED
         self._update_kpi_value(self.yearly_kpi["net"], "yearly_net",
                             f"{net:,.2f} ₺", net_color)
@@ -1122,26 +1189,38 @@ class DailyTurnoverPage(QWidget):
         # Aylık tablo
         self.populate_monthly_breakdown_table(self.yearly_month_table_widget, monthly_data)
 
-        # Kategori dağılımı
+        # Kategori dağılımı (Fire tek satırda)
         cat_data = turnover_service.get_category_summary(self.branch_id, year_start, year_end)
         self.populate_category_table(
             self.yearly_cat_table.findChild(QTableWidget, "yearly_cat_table"),
-            cat_data
+            cat_data,
+            waste_amount=yearly_waste
         )
 
     # ==================== TABLO DOLDURMA ====================
 
-    def populate_category_table(self, table: QTableWidget, cat_data: list):
-        """Kategori özet tablosu"""
+    def populate_category_table(self, table: QTableWidget, cat_data: list, waste_amount: float = 0.0):
+        """Kategori özet tablosu - Toplam fire tek satırda net olarak gösterilir"""
         if table is None:
             return
 
         table.setRowCount(0)
 
-        if not cat_data:
-            return
+        # cat_data içindeki olası dağınık fire satırlarını tek satırda birleştirmek üzere filtrele
+        filtered_cats = []
+        internal_fire = 0.0
+        if cat_data:
+            for item in cat_data:
+                c_name = str(item.get('category', ''))
+                if 'Fire' in c_name or 'Zayiat' in c_name or item.get('entry_type') == 'Waste':
+                    internal_fire += float(item.get('total_amount', 0))
+                else:
+                    filtered_cats.append(item)
 
-        for row_idx, item in enumerate(cat_data):
+        total_single_fire = max(waste_amount, internal_fire)
+
+        row_idx = 0
+        for item in filtered_cats:
             table.insertRow(row_idx)
 
             e_type = item.get('entry_type', 'Income')
@@ -1166,6 +1245,27 @@ class DailyTurnoverPage(QWidget):
             amt_item.setFont(QFont("Segoe UI", 10, QFont.Bold))
             amt_item.setForeground(QColor(AppStyles.GREEN if e_type == 'Income' else AppStyles.RED))
             table.setItem(row_idx, 2, amt_item)
+            row_idx += 1
+
+        # Kullanıcı isteği: Aylık toplam fire tutarı tek satırda net olarak görünsün
+        if total_single_fire > 0:
+            table.insertRow(row_idx)
+            fire_type_item = QTableWidgetItem("🔥 Fire")
+            fire_type_item.setForeground(QColor(AppStyles.DANGER))
+            fire_type_item.setTextAlignment(Qt.AlignCenter)
+            fire_type_item.setFont(QFont("Segoe UI", 9, QFont.Bold))
+            table.setItem(row_idx, 0, fire_type_item)
+
+            fire_cat_item = QTableWidgetItem("🔥 Aylık Toplam Fire Zararı")
+            fire_cat_item.setFont(QFont("Segoe UI", 9, QFont.Bold))
+            fire_cat_item.setForeground(QColor(AppStyles.DANGER))
+            table.setItem(row_idx, 1, fire_cat_item)
+
+            fire_amt_item = QTableWidgetItem(f"{total_single_fire:,.2f} ₺")
+            fire_amt_item.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
+            fire_amt_item.setFont(QFont("Segoe UI", 10, QFont.Bold))
+            fire_amt_item.setForeground(QColor(AppStyles.DANGER))
+            table.setItem(row_idx, 2, fire_amt_item)
 
     def populate_daily_breakdown_table(self, table: QTableWidget, daily_data: list):
         """Aylık görünüm için günlük dağılım"""

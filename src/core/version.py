@@ -100,7 +100,7 @@ def _detect_version() -> str:
         return env_ver
 
     # 4. Hardcoded fallback
-    return "1.0.3"
+    return "1.0.4"
 
 
 # Modül import edildiğinde bir kez hesaplanır

@@ -407,12 +407,11 @@ start "" "{current_exe}"
                 QApplication.quit()
                 import time; time.sleep(0.5); os._exit(0)
             else:
-                QMessageBox.information(
-                    active_win, "İndirme Başarılı (Test Doğrulandı)",
-                    f"🎉 Yeni sürüm paketi sunucudan başarıyla indirildi:\n\n"
-                    f"📂 {installer_path}\n"
-                    f"Boyut: {os.path.getsize(installer_path)} bayt\n\n"
-                    f"OTA Güncelleme ve dosya iletim akışı başarıyla test edildi!"
+                logger.warning(f"İndirilen paket geçerli bir yürütülebilir program (.exe) içermiyor: {installer_path}")
+                QMessageBox.warning(
+                    active_win, "Güncelleme Dosyası Geçersiz",
+                    "İndirilen güncelleme paketi geçerli bir kurulum programı içermiyor.\n"
+                    "Lütfen sistem yöneticinizle iletişime geçin."
                 )
         except Exception as e:
             logger.error(f"Kurulum başlatma hatası: {e}")

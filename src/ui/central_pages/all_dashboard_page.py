@@ -396,7 +396,10 @@ class AllDashboardPage(QWidget):
         header.addStretch()
 
         summary_data = turnover_service.get_three_branches_summary()
-        grand_cum = summary_data.get('grand_cumulative_income', 0.0)
+        grand_cum_net = summary_data.get('grand_cumulative_net', 0.0)
+        grand_cum_inc = summary_data.get('grand_cumulative_income', 0.0)
+        grand_cum_exp = summary_data.get('grand_cumulative_expense', 0.0)
+        grand_cum_waste = summary_data.get('grand_cumulative_waste', 0.0)
         grand_daily = summary_data.get('total_daily_income', 0.0)
 
         # Haftalık konsolide fire verileri
@@ -405,7 +408,7 @@ class AllDashboardPage(QWidget):
         tot_waste_qty = weekly_waste.get('total_waste_qty', 0.0)
         branch_waste_map = weekly_waste.get('branch_breakdown', {})
 
-        daily_badge = QLabel(f"📅 Bugün Toplam: {grand_daily:,.2f} ₺")
+        daily_badge = QLabel(f"📅 Bugün: {grand_daily:,.2f} ₺")
         daily_badge.setStyleSheet(f"""
             font-size: 8.5pt;
             font-weight: bold;
@@ -413,13 +416,28 @@ class AllDashboardPage(QWidget):
             background-color: {AppStyles.BG_DARK};
             border: 1px solid {AppStyles.GREEN}40;
             border-radius: 6px;
-            padding: 4px 10px;
+            padding: 4px 8px;
         """)
         header.addWidget(daily_badge)
 
-        header.addSpacing(6)
+        header.addSpacing(4)
 
-        waste_badge = QLabel(f"🔥 Bu Hafta Fire: {tot_waste_val:,.2f} ₺")
+        income_badge = QLabel(f"💰 Toplam Ciro: {grand_cum_inc:,.2f} ₺")
+        income_badge.setStyleSheet(f"""
+            font-size: 8.5pt;
+            font-weight: bold;
+            color: {AppStyles.CYAN};
+            background-color: {AppStyles.BG_DARK};
+            border: 1px solid {AppStyles.CYAN}50;
+            border-radius: 6px;
+            padding: 4px 8px;
+        """)
+        income_badge.setToolTip(f"Tüm şubelerin tüm zamanlardaki toplam brüt geliri / cirosu: {grand_cum_inc:,.2f} ₺")
+        header.addWidget(income_badge)
+
+        header.addSpacing(4)
+
+        waste_badge = QLabel(f"🔥 Fire: {tot_waste_val:,.2f} ₺")
         waste_badge.setStyleSheet(f"""
             font-size: 8.5pt;
             font-weight: bold;
@@ -427,24 +445,36 @@ class AllDashboardPage(QWidget):
             background-color: {AppStyles.BG_DARK};
             border: 1px solid {AppStyles.DANGER}60;
             border-radius: 6px;
-            padding: 4px 10px;
+            padding: 4px 8px;
         """)
-        waste_badge.setToolTip(f"Tüm şubeler haftalık toplam fire: {tot_waste_val:,.2f} ₺ ({tot_waste_qty:,.1f} Adet/Kg)")
+        waste_badge.setToolTip(f"Tüm şubeler haftalık toplam fire zararı: {tot_waste_val:,.2f} ₺ ({tot_waste_qty:,.1f} Adet/Kg)")
         header.addWidget(waste_badge)
 
-        header.addSpacing(6)
+        header.addSpacing(4)
 
-        total_badge = QLabel(f"🏆 Toplam Kümülatif: {grand_cum:,.2f} ₺")
+        total_badge = QLabel(f"🏆 Net Kümülatif: {grand_cum_net:,.2f} ₺")
+        badge_grad = (
+            f"stop:0 {AppStyles.PRIMARY}, stop:1 {AppStyles.PURPLE}"
+            if grand_cum_net >= 0
+            else f"stop:0 {AppStyles.DANGER}, stop:1 #991b1b"
+        )
         total_badge.setStyleSheet(f"""
-            font-size: 9pt;
+            font-size: 8.5pt;
             font-weight: bold;
             color: white;
-            background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
-                stop:0 {AppStyles.PRIMARY}, stop:1 {AppStyles.PURPLE});
+            background: qlineargradient(x1:0, y1:0, x2:1, y2:0, {badge_grad});
             border-radius: 6px;
-            padding: 4px 12px;
+            padding: 4px 10px;
             border: none;
         """)
+        total_badge.setToolTip(
+            f"📊 Tüm Şubeler Konsolide Net Kümülatif Bakiye:\n"
+            f"• Toplam Brüt Ciro : {grand_cum_inc:,.2f} ₺\n"
+            f"• Toplam Gider      : {grand_cum_exp:,.2f} ₺\n"
+            f"• Toplam Fire Kaybı : {grand_cum_waste:,.2f} ₺\n"
+            f"-----------------------------------------\n"
+            f"• Net Kalan Tutar   : {grand_cum_net:,.2f} ₺ (Gelir - Gider - Fire)"
+        )
         header.addWidget(total_badge)
         layout.addLayout(header)
 
@@ -482,6 +512,9 @@ class AllDashboardPage(QWidget):
             b_daily_exp = b.get('daily_expense', 0.0)
             b_daily_net = b.get('daily_net', 0.0)
             b_cum_inc = b.get('cumulative_income', 0.0)
+            b_cum_exp = b.get('cumulative_expense', 0.0)
+            b_cum_waste = b.get('cumulative_waste', 0.0)
+            b_cum_net = b.get('cumulative_net', 0.0)
 
             card = QFrame()
             card.setStyleSheet(f"""
@@ -539,13 +572,22 @@ class AllDashboardPage(QWidget):
             exp_lbl.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
             grid.addWidget(exp_lbl, 1, 1)
 
-            lbl_cum = QLabel("🏆 Kümülatif:")
-            lbl_cum.setStyleSheet(f"color: {AppStyles.TEXT_SECONDARY}; font-size: 9.5pt;")
+            lbl_cum = QLabel("🏆 Net Kümülatif:")
+            lbl_cum.setStyleSheet(f"color: {AppStyles.TEXT_SECONDARY}; font-size: 9pt;")
             grid.addWidget(lbl_cum, 1, 2)
 
-            cum_val = QLabel(f"{b_cum_inc:,.2f} ₺")
-            cum_val.setStyleSheet(f"font-size: 10pt; font-weight: bold; color: {accent_color};")
+            cum_color = AppStyles.GREEN if b_cum_net >= 0 else AppStyles.RED
+            cum_val = QLabel(f"{b_cum_net:,.2f} ₺")
+            cum_val.setStyleSheet(f"font-size: 10pt; font-weight: bold; color: {cum_color};")
             cum_val.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+            cum_val.setToolTip(
+                f"📊 {b_name} Net Kümülatif:\n"
+                f"• Toplam Gelir : {b_cum_inc:,.2f} ₺\n"
+                f"• Toplam Gider : {b_cum_exp:,.2f} ₺\n"
+                f"• Toplam Fire  : {b_cum_waste:,.2f} ₺\n"
+                f"-------------------------------\n"
+                f"• Kalan Net   : {b_cum_net:,.2f} ₺ (Gelir - Gider - Fire)"
+            )
             grid.addWidget(cum_val, 1, 3)
 
             # Satır 2: Şubenin Bu Haftaki Fire Durumu

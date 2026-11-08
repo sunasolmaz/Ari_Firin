@@ -12,7 +12,7 @@ from PyQt5.QtWidgets import (
     QLabel, QPushButton, QFrame, QTableWidget, QTableWidgetItem,
     QLineEdit, QComboBox, QMessageBox, QDialog, QDialogButtonBox,
     QDoubleSpinBox, QTextEdit, QScrollArea, QGraphicsDropShadowEffect,
-    QHeaderView, QTabWidget, QDateEdit, QSizePolicy
+    QHeaderView, QTabWidget, QDateEdit, QSizePolicy, QAbstractItemView
 )
 from PyQt5.QtCore import Qt, QDate
 from PyQt5.QtGui import QColor, QFont
@@ -249,11 +249,6 @@ class ProductsPage(QWidget):
         self._build_stock_tab()
         self.tabs.addTab(self.tab_stock, "📦 Şube Mevcut Stokları (Canlı Kalanlar)")
 
-        # Sekme 2: İmalathaneden Gelen Sevkiyatlar
-        self.tab_production_shipments = QWidget()
-        self._build_production_shipments_tab()
-        self.tabs.addTab(self.tab_production_shipments, "🚚 İmalathaneden Gelen Sevkiyatlar")
-
         # Sekme 3: Merkez Depodan Gelen Malzemeler
         self.tab_warehouse_dispatches = QWidget()
         self._build_warehouse_dispatches_tab()
@@ -357,6 +352,10 @@ class ProductsPage(QWidget):
             'Bugün Gelen 🚚', 'Bugün Satılan 🧾', 'Kalan Stok 📦', 'Kritik Eşik', 'Durum'
         ])
         self.table.setAlternatingRowColors(True)
+        self.table.setVerticalScrollMode(QAbstractItemView.ScrollPerPixel)
+        self.table.setHorizontalScrollMode(QAbstractItemView.ScrollPerPixel)
+        self.table.verticalScrollBar().setSingleStep(28)
+        self.table.horizontalScrollBar().setSingleStep(28)
         self.table.verticalHeader().setVisible(False)
         self.table.verticalHeader().setDefaultSectionSize(44)
         self.table.horizontalHeader().setVisible(True)
@@ -711,8 +710,12 @@ class ProductsPage(QWidget):
         self.load_products()
 
     def _view_incoming_shipments(self):
-        """İmalattan gelen sevkiyatlar sekmesine geçer (Adım 3)"""
-        self.tabs.setCurrentIndex(1)
+        """İmalattan gelen sevkiyatlar artık Stok Sayımı sayfasında yer almaktadır"""
+        QMessageBox.information(
+            self,
+            "İmalat Sevkiyatları",
+            "İmalathaneden şubeye gelen günlük sevkiyatlar artık 'Stok Sayımı' sayfasından takip edilmektedir."
+        )
 
     def _filter_critical_and_reload(self):
         """Kritik stokları filtreler (Adım 3)"""
@@ -1020,6 +1023,8 @@ class ProductsPage(QWidget):
 
     def load_production_shipments(self):
         """Sekme 2: İmalathaneden gelen sevkiyatları listeler"""
+        if not hasattr(self, 'prod_table'):
+            return
         try:
             period = self.prod_period_combo.currentText() if hasattr(self, 'prod_period_combo') else "Bugün"
             today = datetime.now().date()
