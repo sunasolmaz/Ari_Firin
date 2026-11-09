@@ -104,8 +104,8 @@ def _detect_version() -> str:
     if env_ver:
         candidates.append(env_ver)
 
-    # 5. Hardcoded derleme taban sürümü (bu kod derlenirken v1.0.4 idi, asla bundan eski olamaz)
-    HARDCODED_FALLBACK = "1.0.4"
+    # 5. Hardcoded derleme taban sürümü (bu kod derlenirken v1.0.5 idi, asla bundan eski olamaz)
+    HARDCODED_FALLBACK = "1.0.5"
     candidates.append(HARDCODED_FALLBACK)
 
     # Tüm bulunan sürümler arasından en yüksek geçerli olanı seç

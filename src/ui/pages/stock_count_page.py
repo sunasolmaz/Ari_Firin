@@ -969,6 +969,52 @@ class DailyClosingStockCountDialog(QDialog):
         self.btn_add_closing_item.clicked.connect(self.on_add_closing_item)
         cb_layout.addWidget(self.btn_add_closing_item)
 
+        # 🗑️ Tabloyu Temizle Butonu
+        self.btn_clear_table = QPushButton("🗑️ Tabloyu Temizle")
+        self.btn_clear_table.setCursor(Qt.PointingHandCursor)
+        self.btn_clear_table.setFixedHeight(32)
+        self.btn_clear_table.setStyleSheet(f"""
+            QPushButton {{
+                background-color: {AppStyles.BG_MEDIUM};
+                color: {AppStyles.DANGER};
+                border: 1px solid rgba(239, 68, 68, 0.4);
+                border-radius: 6px;
+                padding: 4px 12px;
+                font-weight: 600;
+                font-size: 9pt;
+            }}
+            QPushButton:hover {{
+                background-color: rgba(239, 68, 68, 0.15);
+                border-color: {AppStyles.DANGER};
+            }}
+        """)
+        self.btn_clear_table.setToolTip("Sayım tablosundaki tüm ürünleri kaldırıp tabloyu boşaltır")
+        self.btn_clear_table.clicked.connect(self.on_clear_table)
+        cb_layout.addWidget(self.btn_clear_table)
+
+        # 🚚 İmalat Sevkiyatlarını Aktar (İsteğe Bağlı)
+        self.btn_import_shipments = QPushButton("🚚 İmalatı Çek")
+        self.btn_import_shipments.setCursor(Qt.PointingHandCursor)
+        self.btn_import_shipments.setFixedHeight(32)
+        self.btn_import_shipments.setStyleSheet(f"""
+            QPushButton {{
+                background-color: {AppStyles.BG_MEDIUM};
+                color: {AppStyles.CYAN};
+                border: 1px solid rgba(6, 182, 212, 0.4);
+                border-radius: 6px;
+                padding: 4px 12px;
+                font-weight: 600;
+                font-size: 9pt;
+            }}
+            QPushButton:hover {{
+                background-color: rgba(6, 182, 212, 0.15);
+                border-color: {AppStyles.CYAN};
+            }}
+        """)
+        self.btn_import_shipments.setToolTip("İmalathaneden bu tarihte gelen sevkiyatları isteğe bağlı olarak tabloya aktarır")
+        self.btn_import_shipments.clicked.connect(self.on_import_shipments)
+        cb_layout.addWidget(self.btn_import_shipments)
+
         cb_layout.addSpacing(14)
 
         # Tabloda Ara
@@ -1545,6 +1591,37 @@ class DailyClosingStockCountDialog(QDialog):
                 self.load_daily_session()
             else:
                 QMessageBox.warning(self, "Hata", msg)
+
+    def on_clear_table(self):
+        """Mevcut sayım tablosundaki tüm kalemleri temizler"""
+        if not self.session_data or not self.session_data.get('id'):
+            return
+        if self.table.rowCount() == 0:
+            return
+        reply = QMessageBox.question(
+            self,
+            "Tabloyu Temizle",
+            "Sayım tablosundaki tüm ürünleri kaldırıp boşaltmak istediğinize emin misiniz?",
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.No
+        )
+        if reply == QMessageBox.Yes:
+            sess_id = self.session_data['id']
+            from ...core.database import db
+            db.execute_query("DELETE FROM StockCountItems WHERE session_id = %s", (sess_id,))
+            self.load_daily_session()
+
+    def on_import_shipments(self):
+        """İmalathaneden bu tarihte gelen sevkiyatları tabloya aktarır"""
+        if not self.session_data or not self.session_data.get('id'):
+            return
+        date_str = self.date_picker.date().toString("yyyy-MM-dd")
+        selected_cat = self.get_current_selected_category()
+        stock_count_service.sync_daily_production_shipments(
+            self.branch_id, self.session_data['id'], date_str, category=selected_cat
+        )
+        self.load_daily_session()
+        QMessageBox.information(self, "İmalat Sevkiyatı", "İmalathaneden gelen sevkiyatlar tabloya aktarıldı.")
 
     def on_closing_row_edit(self, row: int):
         """Satıra tıklandığında veya ✏️ butonuna basıldığında açılan popup ile satırı düzenler"""
