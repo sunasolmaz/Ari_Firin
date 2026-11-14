@@ -104,7 +104,7 @@ graph TD
 | 🧾 **Fatura & Cari Hesap** | Alış/satış faturaları, KDV tevkifatı, cari bakiye yaşlandırma, hesap ekstresi ve PDF/Excel çıktı desteği. |
 | 🏢 **Şirket Giderleri & Banka** | Gider kategorizasyonu, çek/senet takibi, çoklu banka hesap bakiyeleri ve nakit akış projeksiyonu. |
 | 👥 **Personel & Maaş** | Avans, maaş hakedişleri, mesai takibi ve personel bazlı harcama yönetimi. |
-| 🛡️ **Yönetici Denetim Paneli** | Sistem geneli canlı kullanıcı oturumu takibi, bağlantı sıhhat testi ve yetki seviyesi yönetimi. |
+| 🏛️ **Merkez Şube & Konsolidasyon Hub** | Tüm şubelerin anlık ciro, fatura, stok ve cari hareketlerini tek ekranda konsolide izleme ve şubeler arası virman/transfer yönetimi. |
 
 ---
 
@@ -124,7 +124,6 @@ graph TD
 ```text
 Arı_Fırın/
 ├── main.py                     # İstemci masaüstü uygulaması ana giriş noktası
-├── admin_panel.py              # Bağımsız yönetici ve denetim paneli
 ├── ari_firin.spec              # PyInstaller derleme konfigürasyonu
 ├── build_app.py                # Otomatik masaüstü PE derleme aracı
 ├── setup.iss                   # Inno Setup 6 kurulum paketi betiği
@@ -271,3 +270,4 @@ iscc setup.iss
 
 Tüm hakları saklıdır. Bu proje, kurumsal portfolyo ve mimari vitrini amacıyla yayınlanmıştır.
 Proje Geliştiricisi: **Suna Solmaz**
+
