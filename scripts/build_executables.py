@@ -47,25 +47,16 @@ def check_environment():
 
     # Spec dosyaları kontrolü
     ari_spec = PROJECT_ROOT / "ari_firin.spec"
-    admin_spec = PROJECT_ROOT / "universal_admin.spec"
-
     if not ari_spec.exists():
         print(f"❌ HATA: {ari_spec} bulunamadı!")
         return False
-    if not admin_spec.exists():
-        print(f"❌ HATA: {admin_spec} bulunamadı!")
-        return False
 
-    print(f"✅ Spec Dosyaları Mevcut: {ari_spec.name}, {admin_spec.name}")
+    print(f"✅ Spec Dosyası Mevcut: {ari_spec.name}")
 
     # Ana giriş dosyaları kontrolü
     main_py = PROJECT_ROOT / "main.py"
-    admin_py = PROJECT_ROOT / "UniversalAdmin" / "universal_admin.py"
     if not main_py.exists():
         print(f"❌ HATA: {main_py} bulunamadı!")
-        return False
-    if not admin_py.exists():
-        print(f"❌ HATA: {admin_py} bulunamadı!")
         return False
 
     print("✅ Tüm kaynak dosyaları ve spec tanımları eksiksiz.")
@@ -163,15 +154,11 @@ def main():
     if args.clean:
         clean_artifacts()
 
-    # Varsayılan olarak eğer parametre verilmediyse ikisini birden derle
-    build_all = args.all or (not args.build_ari_firin and not args.build_admin)
-
     success = True
-    if build_all or args.build_ari_firin:
-        ok = build_target("ari_firin.spec", "AriFirin")
-        success = success and ok
+    ok = build_target("ari_firin.spec", "AriFirin")
+    success = success and ok
 
-    if build_all or args.build_admin:
+    if (args.all or args.build_admin) and (PROJECT_ROOT / "universal_admin.spec").exists():
         ok = build_target("universal_admin.spec", "UniversalAdmin")
         success = success and ok
 

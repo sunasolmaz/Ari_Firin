@@ -4,7 +4,7 @@
 ; masaüstü simgesi, başlat menüsü ve kaldırma (uninstaller) desteği sağlar.
 
 #define MyAppName "Arı Fırın Muhasebe Sistemi"
-#define MyAppVersion "1.0.0"
+#define MyAppVersion "1.0.5"
 #define MyAppPublisher "Arı Fırın Bilişim"
 #define MyAppExeName "AriFirin.exe"
 #define MyAppIcon "resources\icons\app.ico"

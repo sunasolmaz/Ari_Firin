@@ -7,8 +7,8 @@
         "password": "YOUR_DATABASE_PASSWORD"
     },
     "application": {
-        "name": "Muhasebe Uygulaması",
-        "version": "1.0.2",
+        "name": "Arı Fırın",
+        "version": "1.0.5",
         "theme": "açık",
         "language": "tr",
         "auto_backup": true,
@@ -18,12 +18,12 @@
     },
     "update": {
         "enabled": true,
-        "url": "http://100.125.79.19:8001/version.txt",
-        "download_url": "http://100.125.79.19:8001/AriFirin_v1.0.2.zip",
+        "url": "http://your-server-ip:8001/version.txt",
+        "download_url": "http://your-server-ip:8001/AriFirin_v1.0.5.zip",
         "check_interval": 7,
         "project_id": "ari_firin",
-        "server_url": "http://100.125.79.19:8000",
-        "cloud_hub_url": "http://100.125.79.19:8000",
+        "server_url": "http://your-server-ip:8000",
+        "cloud_hub_url": "http://your-server-ip:8000",
         "license_key": "YOUR_LICENSE_KEY"
     },
     "performance": {

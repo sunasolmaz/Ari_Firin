@@ -233,19 +233,19 @@ class LicenseManager:
         import requests
         try:
             from ..core.config import config
-            raw_url = (server_url or config.get("update.server_url") or config.get("update.cloud_hub_url") or os.environ.get("CLOUD_HUB_URL", "http://100.125.79.19:8000")).rstrip("/")
+            raw_url = (server_url or config.get("update.server_url") or config.get("update.cloud_hub_url") or os.environ.get("CLOUD_HUB_URL", "http://localhost:8000")).rstrip("/")
             if ":8001" in raw_url:
                 raw_url = raw_url.replace(":8001", ":8000")
             url = raw_url
             proj = project_id or config.get("update.project_id", "ari_firin")
-            key = license_key or config.get("update.license_key", "ARI-FIRIN-TEKIRDAG-2026")
+            key = license_key or config.get("update.license_key", "DEMO-LICENSE-KEY")
         except Exception:
-            raw_url = (server_url or os.environ.get("CLOUD_HUB_URL", "http://100.125.79.19:8000")).rstrip("/")
+            raw_url = (server_url or os.environ.get("CLOUD_HUB_URL", "http://localhost:8000")).rstrip("/")
             if ":8001" in raw_url:
                 raw_url = raw_url.replace(":8001", ":8000")
             url = raw_url
             proj = project_id or "ari_firin"
-            key = license_key or "ARI-FIRIN-TEKIRDAG-2026"
+            key = license_key or "DEMO-LICENSE-KEY"
 
         machine_id = self._get_machine_id()
         payload = {

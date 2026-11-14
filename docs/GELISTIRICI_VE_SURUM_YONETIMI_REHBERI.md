@@ -64,7 +64,7 @@ Diyelim ki `1.0.3`tesin ve yeni bir güncelleme yapıp `1.0.4` çıkaracaksın. 
    - 100. satır civarındaki hardcoded fallback sürümünü `"1.0.4"` yap.
 2. **`config.json`:**
    - `"version": "1.0.4"`
-   - `"download_url": "http://100.125.79.19:8001/AriFirin_v1.0.4.zip"`
+   - `"download_url": "http://<SUNUCU_IP>:8001/AriFirin_v1.0.5.zip"`
 3. **`.env`:**
    - `APP_VERSION=1.0.4`
 
@@ -104,17 +104,18 @@ Set-Content -Path "version.txt" -Value "1.0.4"
 
 ### A. Dosyaları Pi'ye Kopyala (PowerShell'den):
 ```powershell
-scp dist\AriFirin_v1.0.4.zip version.txt suna_slmz142@100.125.79.19:/home/suna_slmz142/update_server/
+scp dist\AriFirin_v1.0.5.zip version.txt <KULLANICI>@<SUNUCU_IP>:/home/<KULLANICI>/update_server/
 ```
-*(Pi şifreni girdiğinde iki dosya da sunucuya aktarılır).*
+*(Sunucu şifrenizi girdiğinizde iki dosya da sunucuya aktarılır).*
 
 ### B. Pi Terminalinde Eski Müşteriler İçin Link Eşitleme (Önemli!):
-Eğer sahadaki bazı müşterilerin ayarlarında eski linkler kalmışsa, onların da anında yeni paketi alabilmesi için Pi'ye bağlan (`ssh suna_slmz142@100.125.79.19`):
+Eğer sahadaki bazı müşterilerin ayarlarında eski linkler kalmışsa, onların da anında yeni paketi alabilmesi için sunucuya bağlan (`ssh <KULLANICI>@<SUNUCU_IP>`):
 
 ```bash
-cd /home/suna_slmz142/update_server
-cp -f AriFirin_v1.0.4.zip AriFirin_v1.0.1.zip
-cp -f AriFirin_v1.0.4.zip AriFirin_v1.0.3.zip
+cd /home/<KULLANICI>/update_server
+cp -f AriFirin_v1.0.5.zip AriFirin_v1.0.1.zip
+cp -f AriFirin_v1.0.5.zip AriFirin_v1.0.3.zip
+cp -f AriFirin_v1.0.5.zip AriFirin_v1.0.4.zip
 ```
 
 🎉 **Tebrikler!** Bu adımı tamamladığın anda sahadaki tüm fırınlar uygulamayı açtıklarında otomatik olarak yeni sürüme geçecektir.
@@ -128,7 +129,7 @@ Yeni bir fırına gittin ve programı ilk kez sıfırdan kuracaksın:
 1. `dist/AriFirin` klasörünü (veya ZIP halini) bir USB belleğe at.
 2. Müşterinin bilgisayarında `C:\AriFirin` klasörüne yapıştır.
 3. İçine müşteriye özel `config.json` dosyasını koy:
-   - `database.host`: Raspberry Pi'nin Tailscale IP'si (`100.125.79.19`) veya sabit IP.
+   - `database.host`: Merkezi sunucunun IP adresi (`<SUNUCU_IP>`) veya yerel IP.
    - `update.license_key`: O müşteriye tahsis ettiğin lisans anahtarı.
 4. Klasördeki **`Kurulum_Yap_ve_Kisayol_Olustur.bat`** dosyasına çift tıkla.
    - Masaüstüne ve Başlat Menüsüne altın sarısı logolu **"Arı Fırın"** kısayolları otomatik eklenir.
@@ -140,7 +141,7 @@ Yeni bir fırına gittin ve programı ilk kez sıfırdan kuracaksın:
 
 | Yaşanan Durum | Olası Sebep | Çözüm Komutu / Adımı |
 | :--- | :--- | :--- |
-| **"Permission denied (publickey,password)"** | Yanlış SSH kullanıcı adı girildi | `ssh suna_slmz142@100.125.79.19` kullan. Şifre yazarken ekranda karakter görünmez, yazıp Enter'a bas. |
+| **"Permission denied (publickey,password)"** | Yanlış SSH kullanıcı adı girildi | `ssh <KULLANICI>@<SUNUCU_IP>` kullan. Şifre yazarken ekranda karakter görünmez, yazıp Enter'a bas. |
 | **Pi dosya sunucusu hangi klasörde çalışıyor?** | Klasör yolu unutuldu | Pi terminalinde: `ps aux \| grep 8001` ardından `pwdx <PID>` çalıştır. |
 | **Sonsuz güncelleme uyarısı geliyor** | `download_url` eski kalmış veya `.env` eski sürümde | `updater_service.py` düzeltildi. Pi'de `cp AriFirin_vX.zip AriFirin_v1.0.1.zip` çalıştır. |
 | **Güncelleme indirildi ama kurulmadı** | Uygulama arkada kilitli kaldı | Güncelleme loguna bak: `%TEMP%\ari_firin_update.log` |

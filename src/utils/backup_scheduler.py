@@ -177,12 +177,12 @@ class BackupScheduler:
                 logger.warning(f"Bulut yedekleme için dosya bulunamadı: {backup_path}")
                 return False
 
-            server_url = (config.get("update.server_url") or config.get("update.cloud_hub_url") or os.environ.get("CLOUD_HUB_URL", "http://100.125.79.19:8000")).rstrip("/")
+            server_url = (config.get("update.server_url") or config.get("update.cloud_hub_url") or os.environ.get("CLOUD_HUB_URL", "http://localhost:8000")).rstrip("/")
             if ":8001" in server_url:
                 server_url = server_url.replace(":8001", ":8000")
             project_id = config.get("update.project_id", "ari_firin")
-            client_name = config.get("update.client_name", "Tekirdağ Müşterisi")
-            license_key = config.get("update.license_key", "ARI-FIRIN-TEKIRDAG-2026")
+            client_name = config.get("update.client_name", "Suba / Kasa")
+            license_key = config.get("update.license_key", "DEMO-LICENSE-KEY")
 
             endpoint = f"{server_url}/api/v1/projects/{project_id}/backups/upload"
             filename = os.path.basename(backup_path)

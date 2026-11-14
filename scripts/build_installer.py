@@ -43,9 +43,8 @@ def check_prerequisites() -> bool:
 
     # 1. İkonları kontrol et / yoksa üret
     ari_icon = RESOURCES_DIR / "icons" / "app.ico"
-    admin_icon = ADMIN_RESOURCES_DIR / "icons" / "admin.ico"
-    if not ari_icon.exists() or not admin_icon.exists():
-        print("ℹ️ İkon dosyaları eksik, otomatik üretiliyor...")
+    if not ari_icon.exists():
+        print("ℹ️ İkon dosyası eksik, otomatik üretiliyor...")
         try:
             from scripts.generate_app_icons import generate_all_icons
             generate_all_icons()

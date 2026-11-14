@@ -42,8 +42,8 @@ class Config:
                 "password": "postgres123"
             },
             "application": {
-                "name": "Muhasebe Uygulaması",
-                "version": "1.0.0",
+                "name": "Arı Fırın",
+                "version": "1.0.5",
                 "theme": "professional",
                 "language": "tr",
                 "auto_backup": True,
@@ -51,14 +51,14 @@ class Config:
                 "backup_dir": "backups",
                 "demo_mode": False
             },
-            # ✅ DÜZELTİLDİ: Tüm anahtarlar burada, enabled=True
+            # Merkezi güncelleme ve lisans ayarları
             "update": {
                 "enabled": True,
-                "server_url": "http://100.125.79.19:8000",
-                "url": "http://100.125.79.19:8001/version.txt",
-                "download_url": "http://100.125.79.19:8001/AriFirin_v1.0.1.zip",
+                "server_url": os.environ.get("SERVER_URL", "http://localhost:8000"),
+                "url": os.environ.get("UPDATE_URL", "http://localhost:8001/version.txt"),
+                "download_url": os.environ.get("UPDATE_DOWNLOAD_URL", "http://localhost:8001/AriFirin_latest.zip"),
                 "project_id": "ari_firin",
-                "license_key": "ARI-FIRIN-TEKIRDAG-2026",
+                "license_key": os.environ.get("LICENSE_KEY", "DEMO-LICENSE-KEY"),
                 "check_interval": 7
             },
             "performance": {
@@ -84,7 +84,7 @@ class Config:
             "email": {
                 "smtp_server": "smtp.gmail.com",
                 "smtp_port": 587,
-                "sender_email": "sunasolmaz00@gmail.com",
+                "sender_email": os.environ.get("SMTP_SENDER_EMAIL", ""),
                 "sender_password": "",
                 "use_tls": True,
                 "use_ssl": False
