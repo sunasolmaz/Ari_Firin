@@ -1,199 +1,159 @@
-# 🐝 Arı Fırın ERP - Dağıtık Çok Şubeli Fırın & Muhasebe Yönetim Sistemi
-> **Enterprise Multi-Branch Bakery Management, Production Dispatch & Accounting ERP Ecosystem**
+# Arı Fırın ERP - Dağıtık Çok Şubeli Fırın ve Muhasebe Yönetim Sistemi
+**Enterprise Multi-Branch Bakery Management, Production Dispatch and Accounting ERP System**
 
-[![Python 3.12](https://img.shields.io/badge/Python-3.12-3776AB?style=for-the-badge&logo=python&logoColor=white)](https://www.python.org/)
-[![PyQt5](https://img.shields.io/badge/GUI-PyQt5-41CD52?style=for-the-badge&logo=qt&logoColor=white)](https://riverbankcomputing.com/software/pyqt/)
-[![PostgreSQL](https://img.shields.io/badge/Database-PostgreSQL_14+-4169E1?style=for-the-badge&logo=postgresql&logoColor=white)](https://www.postgresql.org/)
-[![FastAPI](https://img.shields.io/badge/OTA_Hub-FastAPI-009688?style=for-the-badge&logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com/)
-[![Version](https://img.shields.io/badge/Version-1.0.5_Stable-amber?style=for-the-badge)]()
-[![Platform](https://img.shields.io/badge/Platform-Windows_10_|_11-0078D6?style=for-the-badge&logo=windows&logoColor=white)]()
+## 1. Proje Özeti (Executive Summary)
+Arı Fırın ERP, unlu mamul üreticileri, fırın zincirleri ve çok şubeli perakende işletmeleri için geliştirilmiş, üretim bandından kasa noktasına kadar tüm operasyonları yöneten kurumsal masaüstü ERP ve muhasebe sistemidir. 
 
----
+Sistem; yüksek işlem hacmi, günlük fire hesaplamaları, imalathane-şube sevkiyat koordinasyonu, çevrimdışı çalışma toleransı ve finansal kuruş hassasiyeti gereksinimlerini karşılamak üzere dağıtık ve modüler bir mimariyle tasarlanmıştır.
 
-## 📌 Genel Bakış (Overview)
+## 2. Temel Teknik Yetkinlikler ve Anahtar Kelimeler (Core Competencies & Keywords)
+- **Programlama Dilleri ve Kütüphaneler:** Python 3.12, PyQt5, Qt Framework, FastAPI, Uvicorn, SQL, HTML/CSS.
+- **Veritabanı Mimarisi ve Veri Kalıcılığı:** PostgreSQL 14+, Dinamik Multi-Tenant Şema Bölümleme (Dynamic Schema-per-Tenant), Bağlantı Havuzu (Connection Pooling via psycopg2), SQLite (Merkezi lisans/OTA kaydı), ACID Uyumluluğu, Hareket Bütünlüğü (Transaction Management).
+- **Sistem Tasarımı ve Mimari:** Dağıtık İstemci-Sunucu Ekosistemi (Distributed Client-Server), Çevrimdışı Çalışabilirlik (Offline-First Architecture), Çok İş Parçacıklı Arka Plan Servisleri (Multithreaded Background Daemons), RESTful API Entegrasyonu.
+- **Finansal Hesaplama ve Hassasiyet:** Python Decimal Aritmetiği, Banker Yuvarlaması (ROUND_HALF_EVEN), Kuruş Farkı ve Kayan Nokta (Float Drift) Önleme, KDV Tevkifatı ve Cari Yaşlandırma.
+- **Kriptografi ve Kurumsal Güvenlik:** PBKDF2-HMAC-SHA256 (100.000 İterasyon) Tuzlu Parola Özetleme, Zamanlama Saldırısı Koruması (hmac.compare_digest), Donanım Parmak İzi (Hardware Fingerprinting - UUID/MAC/Anakart Hash), AES Şifreli Veritabanı Yedekleme, Parametrik Sorgular (SQL Enjeksiyon Koruması).
+- **Yazılım Dağıtımı ve DevOps:** PyInstaller (Bağımsız Windows PE Derlemesi), Inno Setup 6 (Kurulum Paketi Üretimi), OTA (Over-The-Air) Otomatik Güncelleme Hattı, Docker, Docker Compose, Git Sürüm Kontrolü.
+- **Veri Analitiği ve Raporlama:** Pandas, OpenPyXL (Excel Çift Yönlü Entegrasyon), ReportLab (PDF Ekstre ve Fatura Raporlama).
 
-**Arı Fırın ERP**, unlu mamul üreticileri, pastaneler ve çok şubeli perakende zincirleri için sahada aktif olarak kullanılan **üretimden kasaya uçtan uca kurumsal kaynak planlama (ERP) ve muhasebe** yazılımıdır.
+## 3. Sistem Mimarisi ve Tasarım İlkeleri (System Architecture)
+Sistem 3 temel katmandan meydana gelir:
 
-Geleneksel muhasebe yazılımlarının hantal yapılarına karşın; fırıncılık sektörünün yüksek işlem hacmi, günlük fire dinamikleri, imalathane-şube sevkiyat trafiği ve kesintisiz çalışma (çevrimdışı tolerans) gereksinimleri gözetilerek **yüksek performanslı, modüler ve güvenli** bir mimari ile sıfırdan inşa edilmiştir.
+### 3.1. Masaüstü İstemcisi Katmanı (Desktop Client - PyQt5)
+- Windows işletim sistemlerinde bağımsız (standalone) PE olarak çalışır; Python kurulumu gerektirmez.
+- Qt Fusion motoru ve kurumsal QSS tasarım sistemiyle donatılmış, yüksek çözünürlük (High-DPI) uyumlu kullanıcı arayüzü sunar.
+- Kullanıcı yetkilendirme, veri doğrulama ve finansal hesaplama işlemlerini istemci tarafında düşük gecikme ile yürütür.
 
----
+### 3.2. Veritabanı Katmanı (PostgreSQL Multi-Tenant Dynamic Schemas)
+- **Genel Şema (public):** Kullanıcı oturum kayıtları, yetki tanımları, merkezi şube indeksleri ve kiracı kayıtlarını barındırır.
+- **Kiracı Şemaları (tenant_usr_<id>):** Her kullanıcı / müşteri grubu için dinamik olarak üretilen izole şemalardır. Müşteri carileri, stok kartları, faturalar, kasa hareketleri ve yevmiye kayıtları bu şemalarda tamamen ayrıştırılmış olarak saklanır.
+- **Bağlantı Optimizasyonu:** psycopg2 threaded connection pool ile eşzamanlı sorgular optimize edilir ve bağlantı sızıntıları önlenir.
 
-## 🏛️ Mimari ve Mühendislik Yetkinlikleri (Engineering Highlights)
+### 3.3. Merkezi Kontrol ve Dağıtım Sunucusu (Central Server - FastAPI & Docker)
+- OTA yazılım güncellemelerinin SHA-256 doğrulamasını ve ikili dosya (binary) dağıtımını yönetir.
+- Müşteri lisans doğrulaması (heartbeat) ve uzaktan yönetim mekanizmalarını yürütür.
+- İstemcilerden gelen AES şifreli veritabanı yedeklerini depolar ve saklama politikası (retention policy) doğrultusunda rotasyona tabi tutar.
 
-### 1. PostgreSQL Multi-Tenant Dinamik Şema İzolasyonu
-- Her müşteri veya franchise kümesi için veritabanı seviyesinde bağımsız şemalar (`tenant_usr_X`) dinamik olarak oluşturulur.
-- Ortak tablolar (`public.users`, `public.tenants`) ile şube verileri (`Customers`, `Invoices`, `Stock`, `Turnover`) mantıksal ve fiziksel olarak ayrıştırılarak **tam veri gizliliği** ve **yüksek sorgu performansı** sağlanır.
-- Otomatik şema versiyonlama ve dinamik bağlantı havuzu (connection pooling) ile kaynak tüketimi optimize edilir.
+## 4. Öne Çıkan Mühendislik Çözümleri (Key Engineering Highlights)
 
-### 2. Yüksek Hassasiyetli Finansal Hesaplama Motoru (FinTech Standardı)
-- Kayan nokta (floating point) hesaplamalarından kaynaklanan kuruş sapmalarını ve yuvarlama hatalarını önlemek adına Python standardı `Decimal` ve **Banker's Rounding (`ROUND_HALF_EVEN`)** algoritması kullanılmıştır.
-- KDV tevkifatı, iskonto kademeleri ve cari bakiye yaşlandırma işlemleri mikron seviyesinde finansal doğrulukla yürütülür.
+### 4.1. PostgreSQL Multi-Tenant Dinamik Şema İzolasyonu
+Geleneksel tek şemalı yapılarda sorgulara WHERE tenant_id = X filtresi eklemek yazılımcı hatasına açık ve performans darboğazı yaratan bir yöntemdir. Arı Fırın mimarisinde, her kiracı için fiziksel olarak ayrılmış bağımsız PostgreSQL şemaları (CREATE SCHEMA IF NOT EXISTS tenant_usr_X) kullanılır. Bu sayede:
+- Tam veri gizliliği ve KVKK/GDPR uyumu sağlanır.
+- İndeksler ve tablolar küçük kalarak sorgu süreleri milisaniye seviyesinde tutulur.
+- Şema adı dinamik çözümlenirken beyaz liste (whitelist) ve regex denetimleri uygulanarak SQL enjeksiyonu riski tamamen bertaraf edilir.
 
-### 3. OTA (Over-The-Air) Otomatik Güncelleme ve Sürüm Dağıtımı
-- Sahadaki istemciler, merkezi kontrol sunucusu (`central_server`) ile periyodik olarak haberleşir.
-- Yeni bir sürüm yayınlandığında arka planda SHA-256 doğrulama ile paket indirilir, kullanıcıya modern bildirim şeridi sunulur ve uygulama kapatıldığında kesintisiz binary takası (in-place replacement) gerçekleştirilir.
+### 4.2. Yüksek Hassasiyetli Finansal Hesaplama Motoru
+Finans ve muhasebe uygulamalarında kayan nokta (IEEE 754 floating point) aritmetiği kullanıldığında kuruş düzeyinde sapmalar meydana gelir (0.1 + 0.2 != 0.3). Sistem genelinde:
+- Tüm parasal değerler Python Decimal tipi ile işlenir.
+- Yuvarlama işlemlerinde uluslararası bankacılık standardı olan Banker Yuvarlaması (ROUND_HALF_EVEN) kullanılır.
+- KDV hesaplamaları, iskonto matrahları ve yevmiye denklemleri kuruş farkı oluşturmaksızın %100 doğrulukla kapatılır.
 
-### 4. Çevrimdışı Dayanıklılık ve Donanım Tabanlı Lisanslama
-- Donanım parmak izi (UUID, CPU ve anakart seri numarası) üzerinden makine kimliği doğrulaması yapılır.
-- Ağ kesintilerinde iş akışının aksamaması için **7 günlük çevrimdışı tolerans (offline grace period)** devrededir.
-- Güvenlik ihlallerinde sunucu üzerinden anlık uzaktan askıya alma (**remote kill-switch**) desteği mevcuttur.
+### 4.3. OTA (Over-The-Air) Otomatik Güncelleme Hattı
+Sahada çalışan masaüstü istemcilerinin yerinde müdahale gerektirmeksizin güncellenebilmesi amacıyla özel bir OTA motoru geliştirilmiştir:
+- Uygulama arka plan iş parçacığında merkezi sunucu ile sürüm kontrolü yapar.
+- Yeni sürüm tespit edildiğinde paket arka planda indirilir ve SHA-256 sağlama toplamı (checksum) ile doğrulanır.
+- Kullanıcı uygulamayı kapattığında güncelleme betiği devreye girerek yeni ikili dosyaları atomik olarak değiştirir ve sistemi yeniden başlatır.
 
-### 5. Kriptolu Otomatik Bulut Yedekleme ve Felaket Kurtarma
-- Arka plan iş parçacığında (background daemon thread) çalışan zamanlayıcı, veritabanı dump'larını periyodik olarak alır, şifreler ve merkezi kontrol sunucusuna otomatik olarak yükler.
-- Eski yedeklerin otomatik rotasyonu (retention policy) ile depolama alanı verimli yönetilir.
+### 4.4. Donanım Tabanlı Lisanslama ve Çevrimdışı Çalışma Toleransı
+- İstemci makinenin anakart seri numarası, CPU kimliği ve MAC adresinden benzersiz bir donanım özeti (Machine ID) üretilir.
+- Sunucu ile iletişim kurulamayan ağ kesintilerinde iş akışının durmaması adına 7 günlük çevrimdışı çalışma toleransı (offline grace period) tanınır.
+- Kriptografik zaman damgası kontrolleri sayesinde sistem saatinin manipüle edilmesi engellenir.
+- Sözleşme feshi veya güvenlik ihlallerinde sunucu üzerinden tek komutla uzaktan dondurma (remote kill-switch) uygulanabilir.
 
-### 6. Kurumsal Seviye Güvenlik (Enterprise Security)
-- **Şifreleme:** `PBKDF2-HMAC-SHA256` (100.000 iterasyon) tuzlu (salted) hash'leme.
-- **Zamanlama Saldırısı Koruması:** `hmac.compare_digest` ile sabit zamanlı doğrulama.
-- **SQL Enjeksiyon Koruması:** Tüm veritabanı katmanında %100 parametreli sorgular ve şema adı beyaz liste (whitelist) doğrulaması.
-- **Gizli Bilgi Yönetimi:** Kod tabanında sıfır sabit şifre/IP; çevre değişkenleri (`.env`) ve güvenli yapılandırma şablonları (`config.example.json`).
+### 4.5. Otomatik Şifreli Bulut Yedekleme ve Felaket Kurtarma
+- Arka planda çalışan bağımsız zamanlayıcı (backup_scheduler), yapılandırılan aralıklarla veritabanı dökümünü alır.
+- Alınan SQL dökümleri yerel diskte AES algoritması ile şifrelenir ve merkezi depolama sunucusuna güvenli HTTP POST ile aktarılır.
+- Disk doluluğunu önlemek için yerel ve uzak depolama alanlarında zaman aşımına uğrayan eski yedekler otomatik temizlenir.
 
----
+### 4.6. Kurumsal Seviye Bilgi Güvenliği
+- **Parola Güvenliği:** Parolalar veritabanında asla açık metin olarak saklanmaz. 100.000 iterasyonlu PBKDF2-HMAC-SHA256 ve rastgele 16 baytlık tuz (salt) ile özetlenir.
+- **Zamanlama Saldırısı Engelleme:** Parola doğrulamalarında hmac.compare_digest kullanılarak zaman analizi tabanlı sızma girişimleri önlenir.
+- **Sır Yönetimi:** Kod tabanında hiçbir sabit IP, kullanıcı adı veya veritabanı şifresi yer almaz. Tüm kimlik bilgileri ortam değişkenleri (.env) üzerinden yönetilir.
 
-## 📐 Sistem Mimarisi (System Design)
+## 5. Fonksiyonel Modüller (Functional Modules)
 
-```mermaid
-graph TD
-    subgraph "Merkezi Kontrol ve Dağıtım Sunucusu (FastAPI / Docker)"
-        CS[Central Control Server :8000]
-        CS_DB[(Central SQLite DB)]
-        OTA[OTA Binary Storage & CDN]
-        BKP_REPO[Encrypted Backup Repository]
-        CS --> CS_DB
-        CS --> OTA
-        CS --> BKP_REPO
-    end
+- **Merkezi İmalathane ve Sevkiyat Yönetimi:** Günlük üretim reçetelerinin işlenmesi, un ve hammadde sarfiyatının kaydı, mamul ürünlerin şubelere irsaliye bağlantılı otomatik transferi ve stok senkronizasyonu.
+- **Günlük Kasa ve Ciro Analizi:** Nakit, kredi kartı, banka havalesi ve açık hesap (veresiye) tahsilatlarının ayrıştırılması; günlük masrafların düşülmesi ve Z-raporu kasa mutabakatı.
+- **Stok Sayımı ve Fire Yönetimi:** Tarih bazlı dinamik stok sayım formları, teorik stok ile fiili sayım arasındaki açık/fazla tespiti, otomatik fire maliyeti analizi ve Excel aktarımı.
+- **Fatura ve Cari Hesap Yönetimi:** Alış ve satış faturalarının düzenlenmesi, KDV tevkifatı hesaplaması, cari hesap ekstreleri ve bakiye yaşlandırma raporları.
+- **Banka ve Şirket Giderleri:** Çoklu banka hesap bakiyelerinin takibi, gider kategorizasyonu, çek/senet vade takibi ve nakit akış projeksiyonu.
+- **Personel ve Maaş Yönetimi:** Personel avans, maaş hakedişleri, mesai takibi ve şube bazlı iş gücü maliyet analizleri.
+- **Merkez Şube ve Konsolidasyon:** Tüm bağlı şubelerin anlık ciro, fatura, stok ve cari hareketlerinin tek ekranda konsolide izlenmesi ve şubeler arası virman/transfer yönetimi.
 
-    subgraph "Veritabanı Katmanı (PostgreSQL Enterprise)"
-        PG[(PostgreSQL Database Server :5432)]
-        PUB[public Schema: Auth, Tenants, Global Registry]
-        T1[tenant_usr_1: Suba 1 Cariler, Stok, Faturalar]
-        T2[tenant_usr_2: Suba 2 Cariler, Stok, Faturalar]
-        PG --> PUB
-        PG --> T1
-        PG --> T2
-    end
-
-    subgraph "Masaüstü İstemcisi (PyQt5 Native Client)"
-        UI[Modern Qt GUI / QSS Stylesheet Engine]
-        AUTH[Auth & PBKDF2 Password Validator]
-        DEC[Decimal Precision Accounting Engine]
-        LIC[License & Hardware Fingerprint Agent]
-        UPD[OTA Background Auto-Updater]
-        BKP[Encrypted Backup Daemon]
-        
-        UI --> AUTH
-        UI --> DEC
-        AUTH --> PG
-        DEC --> PG
-        LIC -.->|Heartbeat / Grace Period| CS
-        UPD -.->|Version Check & Download| OTA
-        BKP -.->|AES Encrypted SQL Dump| BKP_REPO
-    end
-```
-
----
-
-## 📦 Temel Modüller ve Yetenekler (Core Modules)
-
-| Modül | Açıklama & Temel Fonksiyonlar |
-| :--- | :--- |
-| 🏭 **İmalathane & Sevkiyat Hub** | Günlük üretim reçeteleri, parti (batch) takibi, un/hammadde sarfiyatı ve şubelere otomatik irsaliyeli ürün sevkiyatı. |
-| 📊 **Günlük Kasa & Ciro** | Nakit, kredi kartı, banka havalesi, veresiye (açık hesap) tahsilatları, gider düşümleri ve gün sonu Z-rapor mutabakatı. |
-| 📦 **Stok & Fire Yönetimi** | Tarih bazlı dinamik stok sayımı, sayım farkı (açık/fazla) tespiti, otomatik fire maliyeti hesaplama ve Excel raporlama. |
-| 🧾 **Fatura & Cari Hesap** | Alış/satış faturaları, KDV tevkifatı, cari bakiye yaşlandırma, hesap ekstresi ve PDF/Excel çıktı desteği. |
-| 🏢 **Şirket Giderleri & Banka** | Gider kategorizasyonu, çek/senet takibi, çoklu banka hesap bakiyeleri ve nakit akış projeksiyonu. |
-| 👥 **Personel & Maaş** | Avans, maaş hakedişleri, mesai takibi ve personel bazlı harcama yönetimi. |
-| 🏛️ **Merkez Şube & Konsolidasyon Hub** | Tüm şubelerin anlık ciro, fatura, stok ve cari hareketlerini tek ekranda konsolide izleme ve şubeler arası virman/transfer yönetimi. |
-
----
-
-## 💻 Teknoloji Yığını (Tech Stack)
-
-- **Masaüstü Kullanıcı Arayüzü:** Python 3.12, PyQt5, Modern QSS (Responsive UI, High-DPI uyumlu)
-- **Veritabanı Motoru:** PostgreSQL 14+, Dinamik Multi-Tenant Şemalar, `psycopg2`
-- **Merkezi Dağıtım & OTA Sunucusu:** FastAPI, Uvicorn, SQLite, Jinja2, Docker
-- **Veri İşleme & Raporlama:** Pandas, OpenPyXL, ReportLab
-- **Güvenlik & Kriptografi:** PBKDF2-HMAC-SHA256, HMAC, Secrets, Zipfile AES şifreleme
-- **Paketleme & Dağıtım:** PyInstaller (Standalone PE), Inno Setup 6 (Windows Kurulum Sihirbazı)
-
----
-
-## 📁 Proje Dizin Yapısı (Project Structure)
+## 6. Proje Dizin Yapısı (Directory Structure)
 
 ```text
-Arı_Fırın/
-├── main.py                     # İstemci masaüstü uygulaması ana giriş noktası
-├── ari_firin.spec              # PyInstaller derleme konfigürasyonu
-├── build_app.py                # Otomatik masaüstü PE derleme aracı
-├── setup.iss                   # Inno Setup 6 kurulum paketi betiği
-├── version.txt                 # Güncel üretim sürüm bilgisi (1.0.5)
-├── config.example.json         # Yapılandırma şablonu (şifresiz/güvenli)
-├── .env.example                # Çevre değişkenleri şablonu
-├── requirements.txt            # İstemci Python bağımlılıkları
-│
-├── central_server/             # Merkezi OTA, Lisans ve Bulut Yedekleme Sunucusu
-│   ├── main.py                 # FastAPI API uç noktaları ve yönetim arayüzü
-│   ├── database.py             # SQLite lisans ve proje kayıt katmanı
-│   ├── Dockerfile              # Container dağıtım konfigürasyonu
-│   ├── docker-compose.yml      # Canlı sunucu orkestrasyonu
-│   └── templates/              # Web yönetim şablonları
-│
-├── src/                        # İstemci Uygulama Çekirdeği
-│   ├── core/                   # Yapılandırma, veritabanı havuzu, logger, versiyon
-│   │   ├── config.py           # Güvenli konfigürasyon yöneticisi
-│   │   ├── database.py         # PostgreSQL multi-tenant havuz ve migration
-│   │   ├── decimal_utils.py    # Finansal kuruş ve banker yuvarlama motoru
-│   │   └── version.py          # Dinamik sürüm çözümleme katmanı
-│   │
-│   ├── models/                 # Veritabanı domain modelleri
-│   │   ├── branch.py           # Şube veri modeli
-│   │   ├── customer.py         # Cari hesap modeli
-│   │   ├── invoice.py          # Fatura ve fatura satırı modeli
-│   │   ├── journal.py          # Muhasebe yevmiye kayıtları
-│   │   └── user.py             # PBKDF2 oturum ve kullanıcı modeli
-│   │
-│   ├── services/               # İş mantığı servisleri (Business Logic)
-│   │   ├── turnover_service.py # Günlük ciro ve kasa servisi
-│   │   ├── production_service.py# İmalat ve sevkiyat transfer servisi
-│   │   ├── stock_count_service.py# Stok sayım ve fire servisi
-│   │   ├── invoice_service.py  # Fatura kesim ve bakiye servisi
-│   │   └── updater_service.py  # OTA arka plan indirme servisi
-│   │
-│   ├── ui/                     # PyQt5 Grafiksel Kullanıcı Arayüzü
-│   │   ├── main_window.py      # Ana uygulama kabuğu ve modül yönlendirici
-│   │   ├── branch_select.py    # Şube seçim diyaloğu
-│   │   ├── pages/              # Alt modül sayfaları (Ciro, İmalat, Stok vb.)
-│   │   └── styles.py           # Kurumsal modern QSS tema tanımları
-│   │
-│   └── utils/                  # Yardımcı araçlar ve arka plan servisleri
-│       ├── auto_updater.py     # Binary takas ve OTA yürütücüsü
-│       ├── backup_scheduler.py # Şifreli yedekleme arka plan iş parçacığı
-│       └── license_manager.py  # Makine parmak izi ve lisans yöneticisi
-│
-├── resources/                  # Uygulama ikonları, logolar ve statik varlıklar
-│   └── icons/                  # Çok çözünürlüklü Windows ICO ve PNG simgeleri
-│
-├── docs/                       # Teknik Belgeler ve Canlıya Alma Rehberleri
-│   ├── CANLIYA_ALMA_VE_DAGITIM_REHBERI.md
-│   └── GELISTIRICI_VE_SURUM_YONETIMI_REHBERI.md
-│
-└── scripts/                    # Operasyonel ve derleme yardımcı betikleri
-    ├── build_executables.py    # Otomatik PyInstaller derleyici
-    ├── build_installer.py      # Inno Setup & ZIP dağıtım paketleyici
-    └── generate_app_icons.py   # Çok çözünürlüklü ICO simge üreteci
+Ari_Firin/
+|-- main.py                     # Masaüstü uygulaması ana giriş noktası
+|-- ari_firin.spec              # PyInstaller derleme konfigürasyonu
+|-- build_app.py                # Windows PE derleme aracı
+|-- setup.iss                   # Inno Setup 6 kurulum paketi betiği
+|-- version.txt                 # Üretim sürüm bilgisi (1.0.5)
+|-- config.example.json         # Yapılandırma şablonu (şifresiz/güvenli)
+|-- .env.example                # Çevre değişkenleri şablonu
+|-- requirements.txt            # Python kütüphane bağımlılıkları
+|
+|-- central_server/             # Merkezi OTA, Lisans ve Bulut Yedekleme Sunucusu
+|   |-- main.py                 # FastAPI REST uç noktaları ve yönetim arayüzü
+|   |-- database.py             # SQLite lisans ve proje kayıt katmanı
+|   |-- Dockerfile              # Docker container konfigürasyonu
+|   |-- docker-compose.yml      # Canlı sunucu orkestrasyonu
+|   `-- templates/              # Sunucu yönetim HTML şablonları
+|
+|-- src/                        # İstemci Uygulama Çekirdeği
+|   |-- core/                   # Yapılandırma, veritabanı havuzu, logger, versiyon
+|   |   |-- config.py           # Güvenli konfigürasyon yöneticisi
+|   |   |-- database.py         # PostgreSQL multi-tenant havuz ve şema yönetimi
+|   |   |-- decimal_utils.py    # Finansal Decimal ve Banker yuvarlama motoru
+|   |   `-- version.py          # Dinamik sürüm çözümleme katmanı
+|   |
+|   |-- models/                 # Veritabanı domain modelleri
+|   |   |-- branch.py           # Şube veri modeli
+|   |   |-- customer.py         # Cari hesap modeli
+|   |   |-- invoice.py          # Fatura ve fatura kalemi modeli
+|   |   |-- journal.py          # Muhasebe yevmiye kayıtları modeli
+|   |   `-- user.py             # PBKDF2 oturum ve kullanıcı modeli
+|   |
+|   |-- services/               # İş mantığı servis katmanı (Business Logic)
+|   |   |-- turnover_service.py # Günlük ciro ve kasa servisi
+|   |   |-- production_service.py# İmalat ve sevkiyat transfer servisi
+|   |   |-- stock_count_service.py# Stok sayım ve fire analiz servisi
+|   |   |-- invoice_service.py  # Fatura kesim ve bakiye takip servisi
+|   |   `-- updater_service.py  # OTA arka plan indirme servisi
+|   |
+|   |-- ui/                     # PyQt5 Grafiksel Kullanıcı Arayüzü
+|   |   |-- main_window.py      # Ana uygulama kabuğu ve modül yönlendirici
+|   |   |-- central_window.py   # Merkez şube ve konsolidasyon penceresi
+|   |   |-- branch_select.py    # Şube seçim diyaloğu
+|   |   |-- pages/              # Şube modül sayfaları (Ciro, İmalat, Stok vb.)
+|   |   |-- central_pages/      # Merkez modül sayfaları (Konsolide Ciro, Raporlar)
+|   |   `-- styles.py           # Modern QSS tema ve arayüz stilleri
+|   |
+|   `-- utils/                  # Yardımcı sistem servisleri
+|       |-- auto_updater.py     # Binary takas ve OTA yürütücüsü
+|       |-- backup_scheduler.py # Şifreli yedekleme arka plan iş parçacığı
+|       `-- license_manager.py  # Makine parmak izi ve lisans yöneticisi
+|
+|-- resources/                  # Uygulama ikonları, logolar ve statik varlıklar
+|   `-- icons/                  # Çok çözünürlüklü Windows ICO ve PNG simgeleri
+|
+|-- docs/                       # Teknik Belgeler ve Canlıya Alma Rehberleri
+|   |-- CANLIYA_ALMA_VE_DAGITIM_REHBERI.md
+|   `-- GELISTIRICI_VE_SURUM_YONETIMI_REHBERI.md
+|
+`-- scripts/                    # Operasyonel ve derleme yardımcı betikleri
+    |-- build_executables.py    # Otomatik PyInstaller derleyici
+    |-- build_installer.py      # Inno Setup ve ZIP dağıtım paketleyici
+    `-- generate_app_icons.py   # Çok çözünürlüklü ICO simge üreteci
 ```
 
----
+## 7. Kurulum ve Yerel Geliştirme (Setup and Local Development)
 
-## 🚀 Kurulum ve Yerel Geliştirme (Getting Started)
-
-### 1. Gereksinimler
-- Python 3.10+ (Önerilen: Python 3.12 64-bit)
+### 7.1. Ön Koşullar
+- Python 3.10 veya üzeri (Önerilen: Python 3.12 64-bit)
 - PostgreSQL 14 veya üzeri
 - Windows 10 / 11 (Masaüstü istemcisi için)
 
-### 2. Depoyu Klonlama ve Sanal Ortam Kurulumu
+### 7.2. Sanal Ortam Kurulumu ve Bağımlılıklar
 ```bash
 git clone https://github.com/sunasolmaz/Ari_Firin.git
 cd Ari_Firin
@@ -205,69 +165,54 @@ venv\Scripts\activate  # Windows
 pip install -r requirements.txt
 ```
 
-### 3. Ortam Değişkenleri ve Konfigürasyon
-1. `.env.example` dosyasını `.env` olarak kopyalayın:
+### 7.3. Ortam Değişkenleri Yapılandırması
+1. `.env.example` dosyasını `.env` olarak kopyalayınız:
    ```bash
    cp .env.example .env
    ```
-2. Veritabanı ve sunucu bilgilerinizi `.env` içerisine tanımlayın:
+2. Veritabanı bağlantı bilgilerinizi `.env` içerisine tanımlayınız:
    ```env
    DB_HOST=localhost
    DB_PORT=5432
    DB_NAME=accounting_db
    DB_USER=postgres
-   DB_PASSWORD=guclu_veritabani_sifreniz
+   DB_PASSWORD=veritabani_parolaniz
    APP_VERSION=1.0.5
    ```
 
-### 4. Uygulamayı Başlatma
+### 7.4. Uygulamayı Başlatma
 ```bash
 python main.py
 ```
-*(İlk çalıştırmada veritabanı şeması ve tabloları otomatik olarak oluşturulur).*
+Uygulama ilk açılışta gerekli PostgreSQL şemalarını ve temel tabloları otomatik olarak hazırlar.
 
-### 5. Merkezi OTA ve Lisans Sunucusunu Başlatma (İsteğe Bağlı)
+### 7.5. Merkezi Dağıtım ve OTA Sunucusunu Başlatma (İsteğe Bağlı)
 ```bash
 cd central_server
 pip install -r requirements.txt
 uvicorn main:app --host 0.0.0.0 --port 8000 --reload
 ```
 
----
+## 8. Üretim Derlemesi ve Paketleme (Production Build & Distribution)
 
-## 🛠️ Derleme ve Dağıtım Pipeline (Build & Packaging)
-
-Proje, son kullanıcı bilgisayarlarına Python kurulu olmaksızın çalışabilen **bağımsız Windows PE (.exe)** formatında paketlenir.
-
-### 1. PyInstaller ile Standalone EXE Derleme
+### 8.1. PyInstaller ile Bağımsız Windows PE (.exe) Derleme
 ```powershell
 pyinstaller --noconfirm --clean ari_firin.spec
 ```
-Veya dahili derleme aracı ile:
-```powershell
-python build_app.py
-```
-Çıktı `dist/AriFirin/` dizininde üretilir.
+Derleme çıktısı `dist/AriFirin/` dizininde üretilir ve istemci makinelerde Python kurulumu gerektirmeden çalışır.
 
-### 2. Inno Setup ile Windows Kurulum Paketi Üretme
-Inno Setup 6 kurulu bir sistemde:
+### 8.2. Inno Setup ile Windows Kurulum Paketi Üretme
+Inno Setup 6 derleyicisi ile:
 ```powershell
 iscc setup.iss
 ```
-`dist/AriFirin_Setup_v1.0.5.exe` tek tıkla kurulan, masaüstü kısayollarını ve kaldırma aracını içeren kurulum paketi üretilir.
+Masaüstü simgesi, başlat menüsü girdileri ve kaldırma aracı içeren tek kurulum paketi (`dist/AriFirin_Setup_v1.0.5.exe`) oluşturulur.
 
----
+## 9. Güvenlik Politikası (Security Policy)
+- Bu depoda yer alan konfigürasyon dosyaları gerçek kimlik bilgileri, IP adresleri ve API parolalarından arındırılmıştır.
+- Canlı dağıtımlarda çevre değişkenleri (`.env`) ve işletim sistemi gizli anahtar depoları kullanılmaktadır.
 
-## 🔒 Güvenlik Politikası ve Açıklık Bildirimi
-
-- Bu depodaki tüm şablon ve örnek konfigürasyon dosyaları gerçek kimlik bilgileri, IP adresleri ve API anahtarlarından arındırılmıştır.
-- Canlı ortamlarda çevre değişkenleri (`.env`) ve işletim sistemi gizli anahtar depoları kullanılmaktadır.
-- Güvenlik açığı bildirimleri için GitHub Issues sekmesini kullanabilirsiniz.
-
----
-
-## 📄 Lisans ve Telif Hakkı
-
-Tüm hakları saklıdır. Bu proje, kurumsal portfolyo ve mimari vitrini amacıyla yayınlanmıştır.
-Proje Geliştiricisi: **Suna Solmaz**
-
+## 10. İletişim ve Geliştirici Bilgisi
+- **Proje Sahibi ve Geliştirici:** Suna Solmaz
+- **Rol:** Full Stack / Desktop & Backend Software Developer
+- **Depo:** https://github.com/sunasolmaz/Ari_Firin
